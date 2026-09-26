@@ -575,12 +575,60 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
     setError('')
     setProcessing(true)
     setProgress(1)
+
+    const categoryIdByName = name => {
+      const target=normalizeReceiptText(name||'').toLowerCase()
+      return categories.find(cat=>normalizeReceiptText(cat.name).toLowerCase()===target)?.id || categoryForReceiptItem(name||'supermercado',categories)
+    }
+
     try{
+      // 1) Leitura principal com IA visual (mais precisa para cupons térmicos)
+      setProgress(8)
+      try{
+        const prepared=await preprocessReceiptImage(file,'gray')
+        setProgress(22)
+        const ai=await api.readReceiptAI(user.token,prepared)
+        const receipt=ai?.receipt
+        if(!receipt || !Array.isArray(receipt.items)) throw new Error('Resposta da IA sem itens.')
+
+        const aiItems=receipt.items
+          .map(item=>({
+            id:crypto.randomUUID(),
+            description:String(item.description||'').trim(),
+            amount:Number(item.total_price||0),
+            quantity:Number(item.quantity||1),
+            unit:String(item.unit||''),
+            unitPrice:Number(item.unit_price||item.total_price||0),
+            confidence:Number(item.confidence||0),
+            categoryId:categoryIdByName(item.category_hint||'Supermercado'),
+          }))
+          .filter(item=>item.description && item.amount>0)
+
+        if(aiItems.length){
+          setStore(String(receipt.store_name||'').trim())
+          setDate(receipt.purchase_date || new Date().toISOString().slice(0,10))
+          setTotal(Number(receipt.total_amount||0) ? String(Number(receipt.total_amount).toFixed(2)).replace('.',',') : '')
+          setItems(aiItems)
+          setAnalyzed(true)
+          setProgress(100)
+
+          const lowConfidence=aiItems.filter(item=>item.confidence>0 && item.confidence<0.65).length
+          if(lowConfidence){
+            setError(`A IA marcou ${lowConfidence} item(ns) com baixa confiança. Confira esses nomes e valores antes de confirmar.`)
+          }
+          return
+        }
+        throw new Error('A IA não encontrou itens.')
+      }catch(aiError){
+        // 2) Fallback gratuito/local com OCR se a Edge Function ainda não estiver ativa ou a IA falhar
+        setProgress(35)
+      }
+
       const {createWorker}=await import('tesseract.js')
       const worker=await createWorker('por',1,{
         logger:message=>{
           if(message.status==='recognizing text' && Number.isFinite(message.progress)){
-            setProgress(Math.max(2,Math.min(94,Math.round(message.progress*45))))
+            setProgress(Math.max(38,Math.min(94,38+Math.round(message.progress*28))))
           }
         }
       })
@@ -601,7 +649,7 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
         (firstParsed.total>0 && Math.abs(firstParsed.items.reduce((s,item)=>s+Number(item.amount||0),0)-firstParsed.total)>.15*firstParsed.total)
 
       if(needsSecondPass){
-        setProgress(52)
+        setProgress(72)
         const binary=await preprocessReceiptImage(file,'binary')
         await worker.setParameters({
           tessedit_pageseg_mode:'11',
@@ -622,17 +670,13 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
       setItems(parsed.items)
       setAnalyzed(true)
       setProgress(100)
-
-      if(parsed.items.length<=1){
-        setError('A leitura encontrou poucos itens. Confira a lista abaixo. Se o cupom tiver mais produtos, toque em “Ler outra foto” e tente uma foto mais próxima e reta.')
-      }
+      setError('A leitura por IA não estava disponível e o sistema usou o OCR local. Confira todos os itens antes de confirmar.')
     }catch(err){
       setError('Não consegui ler esse cupom com segurança. Tente uma foto mais próxima, reta, bem iluminada e com o texto ocupando quase toda a imagem.')
     }finally{
       setProcessing(false)
     }
   }
-
   const updateItem=(id,patch)=>setItems(current=>current.map(item=>item.id===id?{...item,...patch}:item))
   const removeItem=id=>setItems(current=>current.filter(item=>item.id!==id))
   const addItem=()=>setItems(current=>[...current,{id:crypto.randomUUID(),description:'',amount:'',categoryId:categoryForReceiptItem('supermercado',categories)}])
