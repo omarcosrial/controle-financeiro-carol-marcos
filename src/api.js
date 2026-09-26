@@ -4,7 +4,6 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publis
 async function request(path, { method = 'GET', body, session, prefer } = {}) {
   const headers = {
     apikey: SUPABASE_KEY,
-    Authorization: `Bearer ${SUPABASE_KEY}`,
     'Content-Type': 'application/json',
   }
   if (session) headers['x-cm-session'] = session
