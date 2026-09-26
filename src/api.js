@@ -102,6 +102,22 @@ export const api = {
 
   listGoals: session =>
     request('goals?select=id,title,target_amount,current_amount,due_date,status,priority,created_by,created_at&order=created_at.desc', { session }),
+
+  addReceiptImport: (session, receipt) =>
+    request('receipt_imports', {
+      method: 'POST',
+      body: receipt,
+      session,
+      prefer: 'return=representation,missing=default',
+    }),
+
+  addReceiptItems: (session, items) =>
+    request('receipt_items', {
+      method: 'POST',
+      body: items,
+      session,
+      prefer: 'return=representation,missing=default',
+    }),
 }
 
 export { SUPABASE_URL }
