@@ -47,3 +47,51 @@ button:disabled{opacity:.65;cursor:not-allowed}
   .modal{max-height:calc(100dvh - 20px);border-radius:18px;padding:18px}
   .modal-head{top:-18px;padding:18px 0 10px;margin-top:-18px}
 }
+
+
+/* Cupom fiscal */
+.page-actions{display:flex;align-items:center;gap:9px}
+.secondary-btn.compact{padding:10px 13px}
+.receipt-modal{width:min(900px,100%);max-height:calc(100dvh - 32px)}
+.receipt-intro{padding:14px 16px;background:#eef6ff;border-radius:14px;display:grid;gap:4px;margin-bottom:14px}
+.receipt-intro span{color:#6678a4;font-size:13px}
+.receipt-upload{min-height:128px;border:2px dashed #b9ccef;border-radius:16px;background:#f8fbff;display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#145ed8;margin:0 0 14px!important;text-align:center;cursor:pointer}
+.receipt-upload input{display:none}
+.receipt-upload small{color:#7485ad;font-weight:500}
+.receipt-preview{display:block;width:100%;max-height:320px;object-fit:contain;border-radius:14px;background:#eef2f8;margin-bottom:14px}
+.ocr-progress{display:grid;gap:8px;padding:14px;background:#f7faff;border-radius:13px;margin-bottom:14px}
+.ocr-progress>div:first-child{display:flex;justify-content:space-between;align-items:center}
+.ocr-progress small{color:#7485ad}
+.receipt-summary-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px}
+.receipt-summary-grid label{margin-top:0}
+.receipt-summary-grid input{width:100%;padding:12px;border:1px solid #cfdaf0;border-radius:10px}
+.receipt-readonly{border:1px solid #d8e4f5;border-radius:12px;background:#f7faff;padding:12px;display:flex;flex-direction:column;justify-content:center}
+.receipt-readonly span{font-size:12px;color:#7586ac}
+.receipt-readonly strong{font-size:20px;margin-top:4px}
+.receipt-warning{padding:12px 14px;border-radius:12px;background:#fff5df;color:#8b5a00;margin-bottom:14px;font-size:13px}
+.receipt-items-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:8px 0 10px}
+.receipt-items-head h3{margin:0}.receipt-items-head small{color:#7586ac}
+.receipt-items{display:grid;gap:8px}
+.receipt-item{display:grid;grid-template-columns:34px minmax(190px,1.7fr) minmax(140px,1fr) 110px 38px;gap:8px;align-items:center;padding:9px;border:1px solid #e1e9f6;border-radius:12px;background:#fbfdff}
+.receipt-item input,.receipt-item select{width:100%;padding:10px;border:1px solid #d2def0;border-radius:9px;background:#fff;min-width:0}
+.receipt-item-number{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#e7f0ff;color:#0d60e8;font-size:12px;font-weight:800}
+.receipt-remove{width:36px;height:36px;border:1px solid #ffd0d6;border-radius:9px;background:#fff;color:#e23b4d;display:grid;place-items:center}
+.receipt-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.receipt-footnote{display:block;text-align:right;color:#7586ac;margin-top:8px}
+@media(max-width:760px){
+  .page-actions{gap:7px}
+  .page-head .page-actions .secondary-btn.compact,.page-head .page-actions .primary-btn.compact{position:static;width:auto;height:auto;border-radius:11px;font-size:0;padding:11px}
+  .receipt-modal{width:100%;max-height:calc(100dvh - 20px)}
+  .receipt-summary-grid{grid-template-columns:1fr 1fr}
+  .receipt-item{grid-template-columns:28px 1fr 90px 36px}
+  .receipt-item-desc{grid-column:2/5}
+  .receipt-item select{grid-column:2/3}
+  .receipt-item-value{grid-column:3/4}
+  .receipt-remove{grid-column:4/5}
+  .receipt-footer{flex-direction:column-reverse}
+  .receipt-footer button{width:100%}
+  .receipt-footnote{text-align:center}
+}
+@media(max-width:430px){
+  .receipt-summary-grid{grid-template-columns:1fr}
+}
