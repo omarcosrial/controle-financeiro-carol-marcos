@@ -80,6 +80,9 @@ function txToUi(tx, categoryMap, userMap){
     date: tx.transaction_date,
     dueDate: tx.due_date,
     paidDate: tx.paid_date,
+    installmentNumber: tx.installment_number,
+    totalInstallments: tx.total_installments,
+    isRecurring: tx.is_recurring,
     by: userMap[tx.created_by] || 'Usuário',
     type: tx.type,
   }
