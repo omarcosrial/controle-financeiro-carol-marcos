@@ -9,6 +9,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell
 } from 'recharts'
 import './styles.css'
+import { api } from './api'
 
 const COLORS = ['#1368ff', '#7657ff', '#16b8a5', '#ff9f1c', '#ff5b65', '#91a4bd']
 
@@ -39,27 +40,105 @@ const money = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', c
 const getStore = (key, fallback) => { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback } catch { return fallback } }
 const setStore = (key, value) => localStorage.setItem(key, JSON.stringify(value))
 
+const KIND_PT = {
+  recurring: 'Recorrente',
+  extra: 'Extra',
+  fixed: 'Fixa',
+  variable: 'Variável',
+  installment: 'Parcelada',
+  card: 'Cartão',
+  other: 'Outro',
+}
+const KIND_DB = {
+  Recorrente: 'recurring',
+  Extra: 'extra',
+  Fixa: 'fixed',
+  Variável: 'variable',
+  Parcelada: 'installment',
+  Cartão: 'card',
+}
+const STATUS_PT = {
+  planned: 'Planejado',
+  pending: 'Pendente',
+  paid: 'Pago',
+  received: 'Recebida',
+  overdue: 'Em atraso',
+  cancelled: 'Cancelado',
+}
+
+function txToUi(tx, categoryMap, userMap){
+  return {
+    id: tx.id,
+    desc: tx.description,
+    amount: Number(tx.amount),
+    category: categoryMap[tx.category_id]?.name || 'Sem categoria',
+    categoryId: tx.category_id,
+    cardId: tx.card_id,
+    status: STATUS_PT[tx.status] || tx.status,
+    kind: KIND_PT[tx.kind] || tx.kind,
+    date: tx.transaction_date,
+    dueDate: tx.due_date,
+    by: userMap[tx.created_by] || 'Usuário',
+    type: tx.type,
+  }
+}
+
 function Auth({ onLogin }){
   const [mode, setMode] = useState('login')
   const [name, setName] = useState('')
   const [pin, setPin] = useState('')
+  const [joinCode, setJoinCode] = useState('')
   const [showPin, setShowPin] = useState(false)
   const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
 
-  const submit = e => {
-    e.preventDefault(); setMsg('')
+  const submit = async e => {
+    e.preventDefault()
+    setMsg('')
     const clean = name.trim()
     if (!clean) return setMsg('Digite seu nome.')
-    if (!/^\d{4}$/.test(pin)) return setMsg('O PIN deve ter exatamente 4 números.')
-    const users = getStore('cm_users', [])
-    if (mode === 'register') {
-      if (users.some(u => u.name.toLowerCase() === clean.toLowerCase())) return setMsg('Esse nome já está cadastrado neste dispositivo.')
-      const user = { id: crypto.randomUUID?.() || String(Date.now()), name: clean, pin }
-      setStore('cm_users', [...users, user]); setStore('cm_session', user); onLogin(user)
-    } else {
-      const user = users.find(u => u.name.toLowerCase() === clean.toLowerCase() && u.pin === pin)
-      if (!user) return setMsg('Nome ou PIN incorretos.')
-      setStore('cm_session', user); onLogin(user)
+    if (!/^\\d{4}$/.test(pin)) return setMsg('O PIN deve ter exatamente 4 números.')
+
+    setBusy(true)
+    try {
+      let result
+      if (mode === 'register') {
+        result = await api.register(clean, pin, joinCode.trim() || null)
+      } else {
+        result = await api.login(clean, pin)
+      }
+
+      const row = Array.isArray(result) ? result[0] : result
+      if (!row?.session_token) throw new Error('Não foi possível iniciar a sessão.')
+
+      const validated = await api.validate(row.session_token)
+      const profile = Array.isArray(validated) ? validated[0] : validated
+      if (!profile?.user_id) throw new Error('Sessão inválida.')
+
+      const user = {
+        id: profile.user_id,
+        name: profile.user_name,
+        role: profile.user_role,
+        householdId: profile.household_id,
+        token: row.session_token,
+      }
+
+      if (row.join_code) {
+        setStore('cm_join_code', row.join_code)
+        setStore('cm_show_join_code', true)
+      }
+
+      setStore('cm_session', user)
+      onLogin(user)
+    } catch (err) {
+      const text = String(err?.message || err)
+      if (mode === 'register' && text.toLowerCase().includes('código da família')) {
+        setMsg('Já existe uma família cadastrada. Para cadastrar Carol ou Marcos no mesmo sistema, informe o Código da Família.')
+      } else {
+        setMsg(text)
+      }
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -74,14 +153,26 @@ function Auth({ onLogin }){
     <section className="auth-panel">
       <form className="auth-card" onSubmit={submit}>
         <h2>{mode === 'login' ? 'Faça seu login' : 'Criar usuário'}</h2>
-        <p>{mode === 'login' ? 'Acesse sua conta para cuidar das suas finanças.' : 'Cadastre seu nome e um PIN de quatro dígitos.'}</p>
+        <p>{mode === 'login' ? 'Acesse sua conta para continuar cuidando das suas finanças.' : 'Cadastre seu nome e um PIN de quatro dígitos.'}</p>
+
         <label>Nome</label>
-        <div className="field"><UserRound size={20}/><input value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: Marcos"/></div>
+        <div className="field"><UserRound size={20}/><input autoComplete="username" value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: Marcos"/></div>
+
         <label>PIN de 4 dígitos</label>
-        <div className="field"><input inputMode="numeric" maxLength={4} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,''))} type={showPin ? 'text':'password'} placeholder="••••"/><button className="icon-btn" type="button" onClick={()=>setShowPin(v=>!v)}>{showPin?<EyeOff size={18}/>:<Eye size={18}/>}</button></div>
+        <div className="field">
+          <input autoComplete="current-password" inputMode="numeric" maxLength={4} value={pin} onChange={e=>setPin(e.target.value.replace(/\\D/g,''))} type={showPin ? 'text':'password'} placeholder="••••"/>
+          <button className="icon-btn" type="button" onClick={()=>setShowPin(v=>!v)}>{showPin?<EyeOff size={18}/>:<Eye size={18}/>}</button>
+        </div>
+
+        {mode === 'register' && <>
+          <label>Código da Família <small className="label-help">(somente para o segundo usuário)</small></label>
+          <div className="field"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="Deixe vazio no primeiro cadastro"/></div>
+        </>}
+
         {msg && <div className="auth-msg">{msg}</div>}
-        <button className="primary-btn" type="submit">{mode === 'login' ? 'Entrar' : 'Cadastrar e entrar'}</button>
+        <button className="primary-btn" type="submit" disabled={busy}>{busy ? 'Aguarde...' : (mode === 'login' ? 'Entrar' : 'Cadastrar e entrar')}</button>
         <button className="link-btn" type="button" onClick={()=>{setMode(mode==='login'?'register':'login');setMsg('')}}>{mode === 'login' ? 'Primeiro acesso? Criar usuário' : 'Já tenho usuário'}</button>
+
         <div className="verse-card"><div>📖</div><p>“Os planos do diligente certamente levam à vantagem, mas todo apressado certamente chega à pobreza.”</p><strong>PROVÉRBIOS 21:5</strong></div>
       </form>
     </section>
@@ -122,9 +213,9 @@ function Despesas({expenses,onNew}){
   return <><PageHead title="Despesas" subtitle="Controle e acompanhamento dos seus gastos." action={<button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button>}/><div className="stats-grid four"><Stat icon={CreditCard} label="Despesas pagas" value={money(total)} tone="red"/><Stat icon={Clock3} label="A pagar" value={money(0)} tone="orange"/><Stat icon={TrendingDown} label="Em atraso" value={money(0)} tone="red"/><Stat icon={Target} label="Orçamento do mês" value={money(9600)} tone="blue"/></div><div className="two-col split-wide"><Card title="Despesas do mês"><List rows={expenses.map(x=>({...x,type:'out'}))}/></Card><Card title="Despesas por categoria"><div className="pie-wrap vertical"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,8).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div></Card></div></>
 }
 
-function Cartoes({cards}){
+function Cartoes({cards,onNew}){
   const totalLimit=cards.reduce((s,c)=>s+c.limit,0), used=cards.reduce((s,c)=>s+c.used,0)
-  return <><PageHead title="Cartões" subtitle="Controle de cartões, compras e faturas."/><div className="stats-grid four"><Stat icon={CreditCard} label="Limite total" value={money(totalLimit)}/><Stat icon={Wallet} label="Disponível" value={money(totalLimit-used)} tone="green"/><Stat icon={ReceiptText} label="Fatura atual" value={money(used)} tone="red"/><Stat icon={CalendarDays} label="Próximo vencimento" value="20/09" tone="orange"/></div><Card title="Meus cartões"><div className="credit-cards">{cards.map((c,i)=><div className={`credit-card cc${i+1}`} key={c.id}><small>Carol & Marcos</small><h3>{c.name}</h3><div className="cc-number">•••• {1200+c.id*137}</div><div className="cc-bottom"><span>Limite<br/><b>{money(c.limit)}</b></span><span>Disponível<br/><b>{money(c.limit-c.used)}</b></span></div></div>)}</div></Card><div className="two-col"><Card title="Próximas faturas"><List rows={cards.map(c=>({id:c.id,desc:c.name,amount:c.used,category:`Vence ${c.due}`,type:'out'}))}/></Card><Card title="Parcelamentos ativos"><div className="empty">Cadastre compras parceladas pelo botão +.</div></Card></div></>
+  return <><PageHead title="Cartões" subtitle="Controle de cartões, compras e faturas." action={<button className="primary-btn compact" onClick={()=>onNew('card')}><Plus size={18}/> Novo cartão</button>}/><div className="stats-grid four"><Stat icon={CreditCard} label="Limite total" value={money(totalLimit)}/><Stat icon={Wallet} label="Disponível" value={money(totalLimit-used)} tone="green"/><Stat icon={ReceiptText} label="Fatura atual" value={money(used)} tone="red"/><Stat icon={CalendarDays} label="Próximo vencimento" value={cards[0]?.due || '—'} tone="orange"/></div><Card title="Meus cartões">{cards.length ? <div className="credit-cards">{cards.map((card,i)=><div className={`credit-card cc${(i%3)+1}`} key={card.id}><small>Carol & Marcos</small><h3>{card.name}</h3><div className="cc-number">•••• {card.last4 || '0000'}</div><div className="cc-bottom"><span>Limite<br/><b>{money(card.limit)}</b></span><span>Disponível<br/><b>{money(Math.max(card.limit-card.used,0))}</b></span></div></div>)}</div> : <div className="empty">Nenhum cartão cadastrado. Clique em “Novo cartão”.</div>}</Card><div className="two-col"><Card title="Próximas faturas"><List rows={cards.map(card=>({id:card.id,desc:card.name,amount:card.used,category:`Vence ${card.due || '—'}`,type:'out'}))}/></Card><Card title="Parcelamentos ativos"><div className="empty">Os parcelamentos serão exibidos aqui quando forem cadastrados nas despesas.</div></Card></div></>
 }
 
 function Planejamento({expenses,incomes}){
@@ -138,34 +229,234 @@ function Relatorios({expenses,incomes}){
   return <><PageHead title="Relatórios" subtitle="Analise seus resultados e acompanhe sua evolução financeira."/><div className="stats-grid four"><Stat icon={TrendingUp} label="Receitas do mês" value={money(income)} tone="green"/><Stat icon={TrendingDown} label="Despesas do mês" value={money(spent)} tone="red"/><Stat icon={Wallet} label="Saldo líquido" value={money(income-spent)}/><Stat icon={PiggyBank} label="Investido no mês" value={money(Math.max(income-spent,0)*.08)} tone="purple"/></div><div className="two-col"><Card title="Receitas x Despesas"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly}><XAxis dataKey="m"/><YAxis/><Tooltip formatter={v=>money(v)}/><Bar dataKey="r" fill="#14b87a"/><Bar dataKey="d" fill="#1368ff"/></BarChart></ResponsiveContainer></div></Card><Card title="Despesas por categoria"><div className="pie-wrap"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,6).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div></Card></div></>
 }
 
-function Config({user,onLogout}){
-  const users=getStore('cm_users',[])
-  return <><PageHead title="Configurações" subtitle="Personalize o sistema, usuários e preferências."/><div className="two-col split-wide"><Card title="Usuários do sistema"><div className="list">{users.map(u=><div className="list-row" key={u.id}><div className="avatar">{u.name[0].toUpperCase()}</div><div className="grow"><b>{u.name}</b><small>Usuário cadastrado neste dispositivo</small></div><span className="pill">Ativo</span></div>)}</div></Card><Card title="Perfil da família"><div className="settings-text"><b>Carol & Marcos — Controle Financeiro</b><p>Controle financeiro da nossa família.</p><p>Usuário atual: <strong>{user.name}</strong></p></div></Card></div><div className="two-col split-wide"><Card title="Segurança e acesso"><div className="settings-text"><p>✓ Acesso com nome e PIN de 4 dígitos</p><p>✓ Sessão salva neste navegador</p><p className="warning">Nesta primeira versão os dados são salvos no próprio navegador. A sincronização online entre celular e computador será ativada na etapa do Supabase.</p></div></Card><Card title="Backup e exportação"><div className="settings-text"><p>Em breve: exportação CSV/Excel, backup online e restauração.</p><button className="secondary-btn" onClick={onLogout}><LogOut size={18}/> Sair da conta</button></div></Card></div></>
+function Config({user,users,onLogout,onRotateJoinCode}){
+  const [familyCode,setFamilyCode] = useState(()=>getStore('cm_join_code',''))
+  const [rotating,setRotating] = useState(false)
+  const rotate = async () => {
+    setRotating(true)
+    try {
+      const result = await onRotateJoinCode()
+      const code = Array.isArray(result) ? result[0] : result
+      if (code) {
+        setFamilyCode(code)
+        setStore('cm_join_code', code)
+      }
+    } catch (err) {
+      alert(err?.message || 'Não foi possível gerar o código.')
+    } finally {
+      setRotating(false)
+    }
+  }
+
+  return <><PageHead title="Configurações" subtitle="Personalize o sistema, usuários e preferências."/><div className="two-col split-wide"><Card title="Usuários do sistema"><div className="list">{users.map(u=><div className="list-row" key={u.id}><div className="avatar">{u.name[0].toUpperCase()}</div><div className="grow"><b>{u.name}</b><small>{u.role === 'admin' ? 'Administrador' : 'Usuário da família'}</small></div><span className="pill">{u.is_active ? 'Ativo' : 'Inativo'}</span></div>)}</div></Card><Card title="Perfil da família"><div className="settings-text"><b>Carol & Marcos — Controle Financeiro</b><p>Controle financeiro compartilhado da família.</p><p>Usuário atual: <strong>{user.name}</strong></p>{user.role==='admin' && <div className="family-code"><span>Código para cadastrar o segundo usuário</span><strong>{familyCode || 'Gere um novo código'}</strong><button className="secondary-btn" onClick={rotate} disabled={rotating}>{rotating?'Gerando...':'Gerar novo código'}</button></div>}</div></Card></div><div className="two-col split-wide"><Card title="Segurança e acesso"><div className="settings-text"><p>✓ PIN armazenado com hash no banco</p><p>✓ Bloqueio temporário após tentativas incorretas</p><p>✓ Dados separados por família com políticas RLS</p><p className="warning">Evite usar o sistema em computadores públicos. A sessão fica salva neste navegador para facilitar o acesso.</p></div></Card><Card title="Backup e exportação"><div className="settings-text"><p>Os lançamentos agora ficam sincronizados no Supabase entre celular e computador.</p><button className="secondary-btn" onClick={onLogout}><LogOut size={18}/> Sair da conta</button></div></Card></div></>
 }
 
-function NewTransactionModal({type,user,onClose,onSave}){
-  const [form,setForm]=useState({desc:'',amount:'',category:type==='receita'?'Outras receitas':'Outros',kind:type==='receita'?'Extra':'Variável'})
-  const save=()=>{if(!form.desc.trim()||!Number(form.amount))return;onSave({id:Date.now(),desc:form.desc.trim(),amount:Number(form.amount),category:form.category,kind:form.kind,status:type==='receita'?'Recebida':'Pago',date:new Date().toISOString().slice(0,10),by:user.name});onClose()}
-  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><h2>{type==='receita'?'Nova receita':'Nova despesa'}</h2><button onClick={onClose}><X/></button></div><label>Descrição</label><input value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} placeholder={type==='receita'?'Ex.: Venda de material':'Ex.: Supermercado'}/><label>Valor</label><input inputMode="decimal" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(',','.')})} placeholder="0,00"/><label>Categoria</label><input value={form.category} onChange={e=>setForm({...form,category:e.target.value})}/><label>Tipo</label><select value={form.kind} onChange={e=>setForm({...form,kind:e.target.value})}>{type==='receita'?<><option>Recorrente</option><option>Extra</option></>:<><option>Fixa</option><option>Variável</option><option>Parcelada</option></>}</select><div className="modal-user">Lançado por <b>{user.name}</b></div><button className="primary-btn" onClick={save}><Save size={18}/> Salvar lançamento</button></div></div>
+function NewTransactionModal({type,user,categories,cards,onClose,onSave}){
+  const availableCategories = categories.filter(c => type==='receita' ? ['income','both'].includes(c.type) : ['expense','both'].includes(c.type))
+  const [form,setForm]=useState({
+    desc:'',
+    amount:'',
+    categoryId:availableCategories[0]?.id || '',
+    kind:type==='receita'?'Extra':'Variável',
+    dueDate:'',
+    cardId:'',
+  })
+  const [busy,setBusy] = useState(false)
+  const [error,setError] = useState('')
+
+  const save=async()=>{
+    setError('')
+    if(!form.desc.trim()||!Number(form.amount)) return setError('Informe a descrição e o valor.')
+    setBusy(true)
+    try {
+      await onSave({
+        description:form.desc.trim(),
+        amount:Number(form.amount),
+        category_id:form.categoryId || null,
+        card_id:form.cardId || null,
+        kind:KIND_DB[form.kind] || 'other',
+        status:type==='receita'?'received':'paid',
+        type:type==='receita'?'income':'expense',
+        transaction_date:new Date().toISOString().slice(0,10),
+        due_date:form.dueDate || null,
+      })
+      onClose()
+    } catch(err) {
+      setError(err?.message || 'Não foi possível salvar.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><h2>{type==='receita'?'Nova receita':'Nova despesa'}</h2><button onClick={onClose}><X/></button></div><label>Descrição</label><input value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} placeholder={type==='receita'?'Ex.: Venda de material':'Ex.: Supermercado'}/><label>Valor</label><input inputMode="decimal" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(',','.')})} placeholder="0,00"/><label>Categoria</label><select value={form.categoryId} onChange={e=>setForm({...form,categoryId:e.target.value})}><option value="">Sem categoria</option>{availableCategories.map(cat=><option key={cat.id} value={cat.id}>{cat.name}</option>)}</select><label>Tipo</label><select value={form.kind} onChange={e=>setForm({...form,kind:e.target.value})}>{type==='receita'?<><option>Recorrente</option><option>Extra</option></>:<><option>Fixa</option><option>Variável</option><option>Parcelada</option><option>Cartão</option></>}</select>{type==='despesa' && <><label>Vencimento <small className="label-help">(opcional)</small></label><input type="date" value={form.dueDate} onChange={e=>setForm({...form,dueDate:e.target.value})}/>{cards.length>0 && <><label>Cartão <small className="label-help">(opcional)</small></label><select value={form.cardId} onChange={e=>setForm({...form,cardId:e.target.value})}><option value="">Não usar cartão</option>{cards.map(card=><option key={card.id} value={card.id}>{card.name}</option>)}</select></>}</>}<div className="modal-user">Lançado por <b>{user.name}</b></div>{error&&<div className="auth-msg">{error}</div>}<button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Salvar lançamento'}</button></div></div>
+}
+
+function NewCardModal({user,onClose,onSave}){
+  const [form,setForm] = useState({name:'',last4:'',limit:'',closingDay:'',dueDay:''})
+  const [busy,setBusy] = useState(false)
+  const [error,setError] = useState('')
+
+  const save = async () => {
+    setError('')
+    if (!form.name.trim()) return setError('Informe o nome do cartão.')
+    if (!Number(form.limit)) return setError('Informe o limite do cartão.')
+    setBusy(true)
+    try {
+      await onSave({
+        name: form.name.trim(),
+        last4: form.last4.replace(/\\D/g,'').slice(-4) || null,
+        credit_limit: Number(form.limit),
+        closing_day: form.closingDay ? Number(form.closingDay) : null,
+        due_day: form.dueDay ? Number(form.dueDay) : null,
+        created_by: user.id,
+      })
+      onClose()
+    } catch (err) {
+      setError(err?.message || 'Não foi possível cadastrar o cartão.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><h2>Novo cartão</h2><button onClick={onClose}><X/></button></div><label>Nome do cartão</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ex.: Nubank"/><label>Últimos 4 dígitos <small className="label-help">(opcional)</small></label><input inputMode="numeric" maxLength={4} value={form.last4} onChange={e=>setForm({...form,last4:e.target.value.replace(/\\D/g,'')})} placeholder="1234"/><label>Limite</label><input inputMode="decimal" value={form.limit} onChange={e=>setForm({...form,limit:e.target.value.replace(',','.')})} placeholder="0,00"/><div className="form-row"><div><label>Dia do fechamento</label><input inputMode="numeric" maxLength={2} value={form.closingDay} onChange={e=>setForm({...form,closingDay:e.target.value.replace(/\\D/g,'')})}/></div><div><label>Dia do vencimento</label><input inputMode="numeric" maxLength={2} value={form.dueDay} onChange={e=>setForm({...form,dueDay:e.target.value.replace(/\\D/g,'')})}/></div></div>{error&&<div className="auth-msg">{error}</div>}<button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Cadastrar cartão'}</button></div></div>
 }
 
 function BottomNav({page,setPage,onNew}){ return <nav className="bottom-nav"><button className={page==='dashboard'?'active':''} onClick={()=>setPage('dashboard')}><Home/><span>Início</span></button><button className={page==='receitas'?'active':''} onClick={()=>setPage('receitas')}><BarChart3/><span>Receitas</span></button><button className="fab" onClick={()=>onNew('despesa')}><Plus/></button><button className={page==='despesas'?'active':''} onClick={()=>setPage('despesas')}><TrendingDown/><span>Despesas</span></button><button className={['cartoes','planejamento','relatorios','config'].includes(page)?'active':''} onClick={()=>setPage('config')}><Settings/><span>Mais</span></button></nav> }
 
 function App(){
-  const [user,setUser]=useState(()=>getStore('cm_session',null)), [page,setPage]=useState('dashboard'), [expenses,setExpenses]=useState(()=>getStore('cm_expenses',DEFAULT_EXPENSES)), [incomes,setIncomes]=useState(()=>getStore('cm_incomes',DEFAULT_INCOMES)), [cards]=useState(()=>getStore('cm_cards',DEFAULT_CARDS)), [modal,setModal]=useState(null)
-  useEffect(()=>setStore('cm_expenses',expenses),[expenses]); useEffect(()=>setStore('cm_incomes',incomes),[incomes]); useEffect(()=>setStore('cm_cards',cards),[cards])
-  const logout=()=>{localStorage.removeItem('cm_session');setUser(null)}
-  if(!user) return <Auth onLogin={setUser}/>
-  const saveTransaction=item=>{if(modal==='receita')setIncomes(v=>[item,...v]);else setExpenses(v=>[item,...v])}
+  const [user,setUser]=useState(()=>getStore('cm_session',null))
+  const [page,setPage]=useState('dashboard')
+  const [expenses,setExpenses]=useState([])
+  const [incomes,setIncomes]=useState([])
+  const [cards,setCards]=useState([])
+  const [categories,setCategories]=useState([])
+  const [users,setUsers]=useState([])
+  const [modal,setModal]=useState(null)
+  const [loading,setLoading]=useState(!!user)
+  const [loadError,setLoadError]=useState('')
+
+  const loadData = async currentUser => {
+    if (!currentUser?.token) {
+      localStorage.removeItem('cm_session')
+      setUser(null)
+      return
+    }
+
+    setLoading(true)
+    setLoadError('')
+    try {
+      const [validated, categoryRows, transactionRows, userRows, cardRows] = await Promise.all([
+        api.validate(currentUser.token),
+        api.listCategories(currentUser.token),
+        api.listTransactions(currentUser.token),
+        api.listUsers(currentUser.token),
+        api.listCards(currentUser.token),
+      ])
+
+      const profile = Array.isArray(validated) ? validated[0] : validated
+      if (!profile?.user_id) throw new Error('Sua sessão expirou. Entre novamente.')
+
+      const freshUser = {
+        ...currentUser,
+        id: profile.user_id,
+        name: profile.user_name,
+        role: profile.user_role,
+        householdId: profile.household_id,
+      }
+      setUser(freshUser)
+      setStore('cm_session', freshUser)
+
+      const categoryMap = Object.fromEntries((categoryRows || []).map(cat=>[cat.id,cat]))
+      const userMap = Object.fromEntries((userRows || []).map(item=>[item.id,item.name]))
+      const uiTransactions = (transactionRows || []).map(tx=>txToUi(tx, categoryMap, userMap))
+      setCategories(categoryRows || [])
+      setUsers(userRows || [])
+      setIncomes(uiTransactions.filter(tx=>tx.type==='income'))
+      setExpenses(uiTransactions.filter(tx=>tx.type==='expense'))
+
+      const usageByCard = uiTransactions.filter(tx=>tx.type==='expense' && tx.cardId).reduce((acc,tx)=>{
+        acc[tx.cardId] = (acc[tx.cardId] || 0) + Number(tx.amount)
+        return acc
+      },{})
+
+      setCards((cardRows || []).map(card=>({
+        id:card.id,
+        name:card.name,
+        last4:card.last4,
+        limit:Number(card.credit_limit || 0),
+        used:Number(usageByCard[card.id] || 0),
+        close:card.closing_day ? String(card.closing_day).padStart(2,'0') : '—',
+        due:card.due_day ? String(card.due_day).padStart(2,'0') : '—',
+      })))
+    } catch (err) {
+      const message = err?.message || 'Não foi possível carregar os dados.'
+      setLoadError(message)
+      if (message.toLowerCase().includes('sessão') || message.toLowerCase().includes('session')) {
+        localStorage.removeItem('cm_session')
+        setUser(null)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(()=>{
+    if(user?.token) loadData(user)
+  },[])
+
+  const login = freshUser => {
+    setUser(freshUser)
+    setStore('cm_session', freshUser)
+    loadData(freshUser)
+  }
+
+  const logout = async () => {
+    try { if(user?.token) await api.logout(user.token) } catch {}
+    localStorage.removeItem('cm_session')
+    setUser(null)
+    setExpenses([])
+    setIncomes([])
+    setCards([])
+    setCategories([])
+    setUsers([])
+  }
+
+  if(!user) return <Auth onLogin={login}/>
+
+  const saveTransaction = async item => {
+    await api.addTransaction(user.token, {
+      ...item,
+      household_id:user.householdId,
+    })
+    await loadData(user)
+  }
+
+  const saveCard = async card => {
+    await api.addCard(user.token, {
+      ...card,
+      household_id:user.householdId,
+    })
+    await loadData(user)
+  }
+
+  const rotateJoinCode = () => api.rotateJoinCode(user.token)
+
   let content
-  if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes}/>
-  if(page==='receitas') content=<Receitas incomes={incomes} onNew={setModal}/>
-  if(page==='despesas') content=<Despesas expenses={expenses} onNew={setModal}/>
-  if(page==='cartoes') content=<Cartoes cards={cards}/>
-  if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes}/>
-  if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
-  if(page==='config') content=<Config user={user} onLogout={logout}/>
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={setModal}/>{modal&&<NewTransactionModal type={modal} user={user} onClose={()=>setModal(null)} onSave={saveTransaction}/>}</div>
+  if(loading) {
+    content=<div className="loading-card"><div className="spinner"/><b>Sincronizando suas finanças...</b></div>
+  } else if(loadError) {
+    content=<div className="loading-card error-state"><b>Não foi possível sincronizar</b><p>{loadError}</p><button className="primary-btn compact" onClick={()=>loadData(user)}>Tentar novamente</button></div>
+  } else {
+    if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes}/>
+    if(page==='receitas') content=<Receitas incomes={incomes} onNew={setModal}/>
+    if(page==='despesas') content=<Despesas expenses={expenses} onNew={setModal}/>
+    if(page==='cartoes') content=<Cartoes cards={cards} onNew={setModal}/>
+    if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes}/>
+    if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
+    if(page==='config') content=<Config user={user} users={users} onLogout={logout} onRotateJoinCode={rotateJoinCode}/>
+  }
+
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={setModal}/>{modal && modal!=='card' && <NewTransactionModal type={modal} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal==='card' && <NewCardModal user={user} onClose={()=>setModal(null)} onSave={saveCard}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
