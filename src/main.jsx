@@ -322,6 +322,114 @@ function categoryForReceiptItem(description,categories){
   return find('Supermercado') || find('Alimentação') || ''
 }
 
+
+async function preprocessReceiptImage(file, mode='gray'){
+  const bitmap=await createImageBitmap(file)
+  const baseWidth=bitmap.width
+  const baseHeight=bitmap.height
+  const targetWidth=Math.min(2400,Math.max(1600,Math.round(baseWidth*1.8)))
+  const scale=targetWidth/baseWidth
+  const targetHeight=Math.round(baseHeight*scale)
+
+  const canvas=document.createElement('canvas')
+  canvas.width=targetWidth
+  canvas.height=targetHeight
+  const ctx=canvas.getContext('2d',{willReadFrequently:true})
+  ctx.fillStyle='#fff'
+  ctx.fillRect(0,0,targetWidth,targetHeight)
+  ctx.imageSmoothingEnabled=true
+  ctx.imageSmoothingQuality='high'
+  ctx.drawImage(bitmap,0,0,targetWidth,targetHeight)
+  bitmap.close?.()
+
+  const image=ctx.getImageData(0,0,targetWidth,targetHeight)
+  const data=image.data
+  const hist=new Uint32Array(256)
+  const gray=new Uint8Array(targetWidth*targetHeight)
+
+  for(let i=0,p=0;i<data.length;i+=4,p++){
+    const value=Math.max(0,Math.min(255,Math.round(data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114)))
+    gray[p]=value
+    hist[value]++
+  }
+
+  const total=gray.length
+  const percentile=(ratio)=>{
+    const goal=total*ratio
+    let sum=0
+    for(let i=0;i<256;i++){
+      sum+=hist[i]
+      if(sum>=goal) return i
+    }
+    return 255
+  }
+  const low=percentile(.04)
+  const high=Math.max(low+20,percentile(.96))
+
+  const stretched=new Uint8Array(gray.length)
+  const hist2=new Uint32Array(256)
+  for(let i=0;i<gray.length;i++){
+    const v=Math.max(0,Math.min(255,Math.round((gray[i]-low)*255/(high-low))))
+    stretched[i]=v
+    hist2[v]++
+  }
+
+  let threshold=180
+  if(mode==='binary'){
+    let sum=0,totalCount=stretched.length
+    for(let i=0;i<256;i++) sum+=i*hist2[i]
+    let sumB=0,wB=0,maxVariance=0
+    for(let t=0;t<256;t++){
+      wB+=hist2[t]
+      if(!wB) continue
+      const wF=totalCount-wB
+      if(!wF) break
+      sumB+=t*hist2[t]
+      const mB=sumB/wB
+      const mF=(sum-sumB)/wF
+      const variance=wB*wF*(mB-mF)*(mB-mF)
+      if(variance>maxVariance){
+        maxVariance=variance
+        threshold=t
+      }
+    }
+    threshold=Math.max(120,Math.min(220,threshold+8))
+  }
+
+  for(let i=0,p=0;i<data.length;i+=4,p++){
+    let v=stretched[p]
+    if(mode==='binary') v=v<threshold?0:255
+    else {
+      const contrast=1.22
+      v=Math.max(0,Math.min(255,Math.round((v-128)*contrast+128)))
+    }
+    data[i]=data[i+1]=data[i+2]=v
+    data[i+3]=255
+  }
+
+  ctx.putImageData(image,0,0)
+  return await new Promise((resolve,reject)=>{
+    canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Falha ao preparar imagem do cupom.')),'image/jpeg',.94)
+  })
+}
+
+function scoreReceiptParse(parsed,confidence=0){
+  const items=parsed.items||[]
+  const itemSum=items.reduce((sum,item)=>sum+Number(item.amount||0),0)
+  let score=Math.max(0,Number(confidence)||0)/5
+  score+=Math.min(items.length,20)*4
+  score+=parsed.store && !/cn.?j|cpf|danfe|nfce|sat/i.test(normalizeReceiptText(parsed.store)) ? 8 : 0
+  score+=parsed.total>0 ? 10 : 0
+  if(parsed.total>0 && itemSum>0){
+    const ratio=Math.abs(itemSum-parsed.total)/parsed.total
+    if(ratio<.02) score+=18
+    else if(ratio<.08) score+=10
+    else if(ratio<.2) score+=4
+  }
+  score+=Math.min(String(parsed.rawText||'').length/120,12)
+  return score
+}
+
 function parseReceiptOcr(text,categories){
   const rawLines=String(text||'').split(/\r?\n/).map(line=>line.trim()).filter(Boolean)
   const lines=rawLines.map(line=>({raw:line,norm:normalizeReceiptText(line)}))
@@ -463,21 +571,54 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
       const worker=await createWorker('por',1,{
         logger:message=>{
           if(message.status==='recognizing text' && Number.isFinite(message.progress)){
-            setProgress(Math.max(1,Math.round(message.progress*100)))
+            setProgress(Math.max(2,Math.min(94,Math.round(message.progress*45))))
           }
         }
       })
-      const result=await worker.recognize(file)
+
+      const gray=await preprocessReceiptImage(file,'gray')
+      await worker.setParameters({
+        tessedit_pageseg_mode:'6',
+        preserve_interword_spaces:'1',
+        user_defined_dpi:'300',
+      })
+      const first=await worker.recognize(gray)
+      const firstParsed=parseReceiptOcr(first?.data?.text || '',categories)
+      let best={parsed:firstParsed,score:scoreReceiptParse(firstParsed,first?.data?.confidence)}
+
+      const needsSecondPass=
+        firstParsed.items.length<3 ||
+        String(first?.data?.text||'').length<180 ||
+        (firstParsed.total>0 && Math.abs(firstParsed.items.reduce((s,item)=>s+Number(item.amount||0),0)-firstParsed.total)>.15*firstParsed.total)
+
+      if(needsSecondPass){
+        setProgress(52)
+        const binary=await preprocessReceiptImage(file,'binary')
+        await worker.setParameters({
+          tessedit_pageseg_mode:'11',
+          preserve_interword_spaces:'1',
+          user_defined_dpi:'300',
+        })
+        const second=await worker.recognize(binary)
+        const secondParsed=parseReceiptOcr(second?.data?.text || '',categories)
+        const candidate={parsed:secondParsed,score:scoreReceiptParse(secondParsed,second?.data?.confidence)}
+        if(candidate.score>best.score) best=candidate
+      }
+
       await worker.terminate()
-      const parsed=parseReceiptOcr(result?.data?.text || '',categories)
+      const parsed=best.parsed
       setStore(parsed.store || '')
       setDate(parsed.date)
       setTotal(parsed.total ? String(parsed.total.toFixed(2)).replace('.',',') : '')
       setItems(parsed.items)
       setAnalyzed(true)
       setProgress(100)
+
+      if(parsed.items.length<=1){
+        setError('A leitura encontrou poucos itens. Confira a lista abaixo. Se o cupom tiver mais produtos, toque em “Ler outra foto” e tente uma foto mais próxima e reta.')
+      }
     }catch(err){
-      setError('Não consegui ler esse cupom. Tente uma foto mais reta, iluminada e com o texto inteiro visível.')
+      setError('Não consegui ler esse cupom com segurança. Tente uma foto mais próxima, reta, bem iluminada e com o texto ocupando quase toda a imagem.')
     }finally{
       setProcessing(false)
     }
