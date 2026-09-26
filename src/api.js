@@ -72,7 +72,7 @@ export const api = {
       method: 'POST',
       body: transaction,
       session,
-      prefer: 'return=representation',
+      prefer: 'return=representation,missing=default',
     }),
 
   updateTransaction: (session, id, patch) =>
