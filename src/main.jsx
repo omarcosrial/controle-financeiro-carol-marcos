@@ -443,7 +443,7 @@ function App(){
       setIncomes(uiTransactions.filter(tx=>tx.type==='income'))
       setExpenses(uiTransactions.filter(tx=>tx.type==='expense'))
 
-      const usageByCard = uiTransactions.filter(tx=>tx.type==='expense' && tx.cardId).reduce((acc,tx)=>{
+      const usageByCard = uiTransactions.filter(tx=>tx.type==='expense' && tx.cardId && tx.statusKey!=='cancelled').reduce((acc,tx)=>{
         acc[tx.cardId] = (acc[tx.cardId] || 0) + Number(tx.amount)
         return acc
       },{})
@@ -492,10 +492,88 @@ function App(){
 
   if(!user) return <Auth onLogin={login}/>
 
-  const saveTransaction = async item => {
-    await api.addTransaction(user.token, {
-      ...item,
-      household_id:user.householdId,
+  const addMonths = (iso,offset) => {
+    const [year,month,day] = iso.split('-').map(Number)
+    const base = new Date(Date.UTC(year,month-1+offset,1))
+    const lastDay = new Date(Date.UTC(base.getUTCFullYear(),base.getUTCMonth()+1,0)).getUTCDate()
+    const finalDay = Math.min(day,lastDay)
+    const y = base.getUTCFullYear()
+    const m = String(base.getUTCMonth()+1).padStart(2,'0')
+    const d = String(finalDay).padStart(2,'0')
+    return `${y}-${m}-${d}`
+  }
+
+  const saveTransaction = async (item,options={}) => {
+    if (options.id) {
+      await api.updateTransaction(user.token, options.id, item)
+      await loadData(user)
+      return
+    }
+
+    const base = {...item, household_id:user.householdId}
+
+    if (options.kind==='Parcelada') {
+      const total = Math.max(2,Number(options.totalInstallments || 2))
+      const group = crypto.randomUUID()
+      const rows = Array.from({length:total},(_,index)=>({
+        ...base,
+        description:`${base.description} ${index+1}/${total}`,
+        status:index===0 ? base.status : 'pending',
+        paid_date:index===0 ? base.paid_date : null,
+        paid_by:index===0 ? base.paid_by : null,
+        due_date:addMonths(base.due_date,index),
+        transaction_date:addMonths(base.due_date,index),
+        installment_group:group,
+        installment_number:index+1,
+        total_installments:total,
+      }))
+      await api.addTransaction(user.token, rows)
+      await loadData(user)
+      return
+    }
+
+    if (options.repeatFuture && ['Fixa','Recorrente'].includes(options.kind)) {
+      if (!base.due_date) throw new Error('Informe o vencimento para gerar os próximos meses.')
+      const rows = Array.from({length:12},(_,index)=>({
+        ...base,
+        status:index===0 ? base.status : 'pending',
+        paid_date:index===0 ? base.paid_date : null,
+        paid_by:index===0 ? base.paid_by : null,
+        due_date:addMonths(base.due_date,index),
+        transaction_date:addMonths(base.due_date,index),
+        is_recurring:true,
+        recurrence_day:Number(base.due_date.slice(-2)),
+      }))
+      await api.addTransaction(user.token, rows)
+      await loadData(user)
+      return
+    }
+
+    await api.addTransaction(user.token, base)
+    await loadData(user)
+  }
+
+  const editTransaction = item => setModal({
+    kind:'transaction',
+    type:item.type==='income'?'receita':'despesa',
+    item,
+  })
+
+  const deleteTransaction = async item => {
+    await api.deleteTransaction(user.token,item.id)
+    await loadData(user)
+  }
+
+  const toggleTransactionStatus = async item => {
+    const isIncome = item.type==='income'
+    const next = isIncome
+      ? (item.statusKey==='received' ? 'pending' : 'received')
+      : (item.statusKey==='paid' ? 'pending' : 'paid')
+
+    await api.updateTransaction(user.token,item.id,{
+      status:next,
+      paid_date:['paid','received'].includes(next) ? new Date().toISOString().slice(0,10) : null,
+      paid_by:['paid','received'].includes(next) ? user.id : null,
     })
     await loadData(user)
   }
@@ -517,15 +595,15 @@ function App(){
     content=<div className="loading-card error-state"><b>Não foi possível sincronizar</b><p>{loadError}</p><button className="primary-btn compact" onClick={()=>loadData(user)}>Tentar novamente</button></div>
   } else {
     if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes}/>
-    if(page==='receitas') content=<Receitas incomes={incomes} onNew={setModal}/>
-    if(page==='despesas') content=<Despesas expenses={expenses} onNew={setModal}/>
-    if(page==='cartoes') content=<Cartoes cards={cards} onNew={setModal}/>
+    if(page==='receitas') content=<Receitas incomes={incomes} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
+    if(page==='despesas') content=<Despesas expenses={expenses} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
+    if(page==='cartoes') content=<Cartoes cards={cards} onNew={()=>setModal({kind:'card'})}/>
     if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes}/>
     if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
     if(page==='config') content=<Config user={user} users={users} onLogout={logout} onRotateJoinCode={rotateJoinCode}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={setModal}/>{modal && modal!=='card' && <NewTransactionModal type={modal} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal==='card' && <NewCardModal user={user} onClose={()=>setModal(null)} onSave={saveCard}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} onClose={()=>setModal(null)} onSave={saveCard}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
