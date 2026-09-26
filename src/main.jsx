@@ -433,12 +433,21 @@ function scoreReceiptParse(parsed,confidence=0){
 function parseReceiptOcr(text,categories){
   const rawLines=String(text||'').split(/\r?\n/).map(line=>line.trim()).filter(Boolean)
   const lines=rawLines.map(line=>({raw:line,norm:normalizeReceiptText(line)}))
-  const noise=/\b(CNPJ|CPF|DANFE|NFC|SAT|CUPOM|DOCUMENTO|CHAVE|TRIBUT|ICMS|PAGAMENTO|FORMA DE PAGAMENTO|TROCO|DINHEIRO|CARTAO|PIX|DESCONTO|ACRESCIMO|SUBTOTAL|TOTAL A PAGAR|VALOR TOTAL|QTD TOTAL|QUANTIDADE TOTAL|CONSUMIDOR|OPERADOR|PROTOCOLO|AUTORIZACAO|CONTINGENCIA|EMISSAO)\b/i
+  const noise=/\b(CNPJ|CPF|DANFE|NFC|NFCE|SAT|CUPOM|DOCUMENTO|CHAVE|TRIBUT|ICMS|PAGAMENTO|FORMA DE PAGAMENTO|TROCO|DINHEIRO|CARTAO|PIX|DESCONTO|ACRESCIMO|SUBTOTAL|TOTAL A PAGAR|VALOR TOTAL|QTD TOTAL|QUANTIDADE TOTAL|CONSUMIDOR|OPERADOR|PROTOCOLO|AUTORIZACAO|CONTINGENCIA|EMISSAO|SERIE|EXTRATO)\b/i
+  const isNoiseLine=line=>{
+    const compact=normalizeReceiptText(line).toUpperCase().replace(/[^A-Z0-9]/g,'')
+    if(noise.test(normalizeReceiptText(line))) return true
+    if(/^(CN)?P?J\d*|^CPF\d*/.test(compact)) return true
+    if(compact.includes('CNPJ') || compact.includes('DANFE') || compact.includes('NFCE')) return true
+    return false
+  }
 
   let store=''
-  for(const line of lines.slice(0,12)){
+  for(const line of lines.slice(0,14)){
+    const digitCount=(line.raw.match(/\d/g)||[]).length
     if(line.norm.length<3 || line.norm.length>80) continue
-    if(noise.test(line.norm)) continue
+    if(isNoiseLine(line.raw)) continue
+    if(digitCount>5) continue
     if(!/[A-Za-zÀ-ÿ]{3}/.test(line.raw)) continue
     store=line.raw.replace(/^[^A-Za-zÀ-ÿ]+/,'').trim()
     if(store) break
@@ -473,13 +482,13 @@ function parseReceiptOcr(text,categories){
     const hasMoney=moneyMatches.length>0
 
     if(!hasMoney){
-      if(!noise.test(line.norm) && /[A-Za-zÀ-ÿ]{3}/.test(line.raw) && line.norm.length<=90){
+      if(!isNoiseLine(line.raw) && /[A-Za-zÀ-ÿ]{3}/.test(line.raw) && line.norm.length<=90){
         previousCandidate=line.raw
       }
       continue
     }
 
-    if(noise.test(line.norm)) {
+    if(isNoiseLine(line.raw)) {
       previousCandidate=''
       continue
     }
