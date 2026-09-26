@@ -18,3 +18,26 @@
 @keyframes cm-spin{to{transform:rotate(360deg)}}
 button:disabled{opacity:.65;cursor:not-allowed}
 @media(max-width:760px){.form-row{grid-template-columns:1fr}.family-code strong{font-size:20px}}
+
+
+/* Lançamentos completos */
+.transaction-row{gap:9px}
+.status-badge{font-size:11px;font-weight:800;padding:6px 9px;border-radius:999px;white-space:nowrap}
+.status-pago,.status-recebida{background:#dcf8eb;color:#078a58}
+.status-pendente,.status-a-pagar,.status-planejado{background:#fff1d9;color:#c36b00}
+.status-em-atraso{background:#ffe4e7;color:#d72f43}
+.status-cancelado{background:#edf0f5;color:#657087}
+.row-actions{display:flex;gap:5px}
+.row-actions button{width:32px;height:32px;border:1px solid #dbe5f4;border-radius:9px;background:#fff;color:#1766e8;display:grid;place-items:center}
+.row-actions button:hover{background:#edf5ff}
+.row-actions .danger-action{color:#e33c4f}
+.form-help{display:block;color:#7283a8;margin-top:6px}
+.checkbox-line{display:flex!important;align-items:center;gap:9px;margin:16px 0!important;font-weight:600!important}
+.checkbox-line input{width:18px;height:18px}
+@media(max-width:760px){
+  .transaction-row{align-items:flex-start;flex-wrap:wrap}
+  .transaction-row .grow{min-width:calc(100% - 55px)}
+  .transaction-row>.status-badge{margin-left:48px}
+  .transaction-row>.good,.transaction-row>.bad{margin-left:auto}
+  .row-actions{width:100%;justify-content:flex-end}
+}
