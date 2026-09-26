@@ -865,6 +865,49 @@ function App(){
     await loadData(user)
   }
 
+  const saveReceipt = async receipt => {
+    const receiptRows = await api.addReceiptImport(user.token, {
+      household_id:user.householdId,
+      store_name:receipt.storeName,
+      receipt_date:receipt.receiptDate,
+      total_amount:Number(receipt.totalAmount || 0),
+      status:'confirmed',
+      created_by:user.id,
+    })
+    const receiptRow = Array.isArray(receiptRows) ? receiptRows[0] : receiptRows
+    if (!receiptRow?.id) throw new Error('Não foi possível criar o registro do cupom.')
+
+    const itemRows = receipt.items.map(item=>({
+      household_id:user.householdId,
+      receipt_id:receiptRow.id,
+      description:item.description,
+      quantity:1,
+      total_price:Number(item.amount),
+      category_id:item.categoryId || null,
+    }))
+
+    await api.addReceiptItems(user.token,itemRows)
+
+    const transactionRows = receipt.items.map(item=>({
+      household_id:user.householdId,
+      type:'expense',
+      description:item.description,
+      amount:Number(item.amount),
+      category_id:item.categoryId || null,
+      kind:'variable',
+      status:'paid',
+      transaction_date:receipt.receiptDate,
+      due_date:receipt.receiptDate,
+      paid_date:receipt.receiptDate,
+      paid_by:user.id,
+      merchant:receipt.storeName,
+      source:'receipt',
+    }))
+
+    await api.addTransaction(user.token,transactionRows)
+    await loadData(user)
+  }
+
   const rotateJoinCode = () => api.rotateJoinCode(user.token)
 
   let content
@@ -875,14 +918,14 @@ function App(){
   } else {
     if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes}/>
     if(page==='receitas') content=<Receitas incomes={incomes} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
-    if(page==='despesas') content=<Despesas expenses={expenses} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
+    if(page==='despesas') content=<Despesas expenses={expenses} onNew={type=>setModal({kind:'transaction',type})} onReceipt={()=>setModal({kind:'receipt'})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
     if(page==='cartoes') content=<Cartoes cards={cards} onNew={()=>setModal({kind:'card'})}/>
     if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes}/>
     if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
     if(page==='config') content=<Config user={user} users={users} onLogout={logout} onRotateJoinCode={rotateJoinCode}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} onClose={()=>setModal(null)} onSave={saveCard}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
