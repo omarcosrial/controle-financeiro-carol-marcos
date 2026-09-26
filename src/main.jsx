@@ -97,7 +97,7 @@ function Auth({ onLogin }){
     setMsg('')
     const clean = name.trim()
     if (!clean) return setMsg('Digite seu nome.')
-    if (!/^\\d{4}$/.test(pin)) return setMsg('O PIN deve ter exatamente 4 números.')
+    if (!/^\d{4}$/.test(pin)) return setMsg('O PIN deve ter exatamente 4 números.')
 
     setBusy(true)
     try {
@@ -160,7 +160,7 @@ function Auth({ onLogin }){
 
         <label>PIN de 4 dígitos</label>
         <div className="field">
-          <input autoComplete="current-password" inputMode="numeric" maxLength={4} value={pin} onChange={e=>setPin(e.target.value.replace(/\\D/g,''))} type={showPin ? 'text':'password'} placeholder="••••"/>
+          <input autoComplete="current-password" inputMode="numeric" maxLength={4} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,''))} type={showPin ? 'text':'password'} placeholder="••••"/>
           <button className="icon-btn" type="button" onClick={()=>setShowPin(v=>!v)}>{showPin?<EyeOff size={18}/>:<Eye size={18}/>}</button>
         </div>
 
@@ -304,7 +304,7 @@ function NewCardModal({user,onClose,onSave}){
     try {
       await onSave({
         name: form.name.trim(),
-        last4: form.last4.replace(/\\D/g,'').slice(-4) || null,
+        last4: form.last4.replace(/\D/g,'').slice(-4) || null,
         credit_limit: Number(form.limit),
         closing_day: form.closingDay ? Number(form.closingDay) : null,
         due_day: form.dueDay ? Number(form.dueDay) : null,
@@ -318,7 +318,7 @@ function NewCardModal({user,onClose,onSave}){
     }
   }
 
-  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><h2>Novo cartão</h2><button onClick={onClose}><X/></button></div><label>Nome do cartão</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ex.: Nubank"/><label>Últimos 4 dígitos <small className="label-help">(opcional)</small></label><input inputMode="numeric" maxLength={4} value={form.last4} onChange={e=>setForm({...form,last4:e.target.value.replace(/\\D/g,'')})} placeholder="1234"/><label>Limite</label><input inputMode="decimal" value={form.limit} onChange={e=>setForm({...form,limit:e.target.value.replace(',','.')})} placeholder="0,00"/><div className="form-row"><div><label>Dia do fechamento</label><input inputMode="numeric" maxLength={2} value={form.closingDay} onChange={e=>setForm({...form,closingDay:e.target.value.replace(/\\D/g,'')})}/></div><div><label>Dia do vencimento</label><input inputMode="numeric" maxLength={2} value={form.dueDay} onChange={e=>setForm({...form,dueDay:e.target.value.replace(/\\D/g,'')})}/></div></div>{error&&<div className="auth-msg">{error}</div>}<button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Cadastrar cartão'}</button></div></div>
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><h2>Novo cartão</h2><button onClick={onClose}><X/></button></div><label>Nome do cartão</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ex.: Nubank"/><label>Últimos 4 dígitos <small className="label-help">(opcional)</small></label><input inputMode="numeric" maxLength={4} value={form.last4} onChange={e=>setForm({...form,last4:e.target.value.replace(/\D/g,'')})} placeholder="1234"/><label>Limite</label><input inputMode="decimal" value={form.limit} onChange={e=>setForm({...form,limit:e.target.value.replace(',','.')})} placeholder="0,00"/><div className="form-row"><div><label>Dia do fechamento</label><input inputMode="numeric" maxLength={2} value={form.closingDay} onChange={e=>setForm({...form,closingDay:e.target.value.replace(/\D/g,'')})}/></div><div><label>Dia do vencimento</label><input inputMode="numeric" maxLength={2} value={form.dueDay} onChange={e=>setForm({...form,dueDay:e.target.value.replace(/\D/g,'')})}/></div></div>{error&&<div className="auth-msg">{error}</div>}<button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Cadastrar cartão'}</button></div></div>
 }
 
 function BottomNav({page,setPage,onNew}){ return <nav className="bottom-nav"><button className={page==='dashboard'?'active':''} onClick={()=>setPage('dashboard')}><Home/><span>Início</span></button><button className={page==='receitas'?'active':''} onClick={()=>setPage('receitas')}><BarChart3/><span>Receitas</span></button><button className="fab" onClick={()=>onNew('despesa')}><Plus/></button><button className={page==='despesas'?'active':''} onClick={()=>setPage('despesas')}><TrendingDown/><span>Despesas</span></button><button className={['cartoes','planejamento','relatorios','config'].includes(page)?'active':''} onClick={()=>setPage('config')}><Settings/><span>Mais</span></button></nav> }
