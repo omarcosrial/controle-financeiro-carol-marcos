@@ -32,6 +32,32 @@ async function request(path, { method = 'GET', body, session, prefer } = {}) {
 const rpc = (name, body = {}, session) =>
   request(`rpc/${name}`, { method: 'POST', body, session })
 
+async function readReceiptAI(session, imageBlob) {
+  const form = new FormData()
+  const filename = imageBlob?.name || 'cupom.jpg'
+  form.append('image', imageBlob, filename)
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/read-receipt`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_KEY,
+      'x-cm-session': session,
+    },
+    body: form,
+  })
+
+  const raw = await response.text()
+  let data = null
+  if (raw) {
+    try { data = JSON.parse(raw) } catch { data = raw }
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.error || data?.message || `Erro ${response.status} ao ler o cupom.`)
+  }
+  return data
+}
+
 export const api = {
   register: (name, pin, joinCode) =>
     rpc('cm_register_user', {
@@ -118,6 +144,8 @@ export const api = {
       session,
       prefer: 'return=representation,missing=default',
     }),
+
+  readReceiptAI,
 }
 
 export { SUPABASE_URL }
