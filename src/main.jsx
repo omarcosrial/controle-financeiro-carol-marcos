@@ -289,15 +289,18 @@ function Config({user,users,onLogout,onRotateJoinCode}){
   return <><PageHead title="Configurações" subtitle="Personalize o sistema, usuários e preferências."/><div className="two-col split-wide"><Card title="Usuários do sistema"><div className="list">{users.map(u=><div className="list-row" key={u.id}><div className="avatar">{u.name[0].toUpperCase()}</div><div className="grow"><b>{u.name}</b><small>{u.role === 'admin' ? 'Administrador' : 'Usuário da família'}</small></div><span className="pill">{u.is_active ? 'Ativo' : 'Inativo'}</span></div>)}</div></Card><Card title="Perfil da família"><div className="settings-text"><b>Carol & Marcos — Controle Financeiro</b><p>Controle financeiro compartilhado da família.</p><p>Usuário atual: <strong>{user.name}</strong></p>{user.role==='admin' && <div className="family-code"><span>Código para cadastrar o segundo usuário</span><strong>{familyCode || 'Gere um novo código'}</strong><button className="secondary-btn" onClick={rotate} disabled={rotating}>{rotating?'Gerando...':'Gerar novo código'}</button></div>}</div></Card></div><div className="two-col split-wide"><Card title="Segurança e acesso"><div className="settings-text"><p>✓ PIN armazenado com hash no banco</p><p>✓ Bloqueio temporário após tentativas incorretas</p><p>✓ Dados separados por família com políticas RLS</p><p className="warning">Evite usar o sistema em computadores públicos. A sessão fica salva neste navegador para facilitar o acesso.</p></div></Card><Card title="Backup e exportação"><div className="settings-text"><p>Os lançamentos agora ficam sincronizados no Supabase entre celular e computador.</p><button className="secondary-btn" onClick={onLogout}><LogOut size={18}/> Sair da conta</button></div></Card></div></>
 }
 
-function NewTransactionModal({type,user,categories,cards,onClose,onSave}){
+function NewTransactionModal({type,user,categories,cards,item,onClose,onSave}){
   const availableCategories = categories.filter(c => type==='receita' ? ['income','both'].includes(c.type) : ['expense','both'].includes(c.type))
   const [form,setForm]=useState({
-    desc:'',
-    amount:'',
-    categoryId:availableCategories[0]?.id || '',
-    kind:type==='receita'?'Extra':'Variável',
-    dueDate:'',
-    cardId:'',
+    desc:item?.desc || '',
+    amount:item?.amount ? String(item.amount) : '',
+    categoryId:item?.categoryId || availableCategories[0]?.id || '',
+    kind:item?.kind || (type==='receita'?'Extra':'Variável'),
+    status:item?.statusKey || (type==='receita'?'received':'paid'),
+    dueDate:item?.dueDate || '',
+    cardId:item?.cardId || '',
+    totalInstallments:item?.totalInstallments || 2,
+    repeatFuture:false,
   })
   const [busy,setBusy] = useState(false)
   const [error,setError] = useState('')
@@ -305,6 +308,7 @@ function NewTransactionModal({type,user,categories,cards,onClose,onSave}){
   const save=async()=>{
     setError('')
     if(!form.desc.trim()||!Number(form.amount)) return setError('Informe a descrição e o valor.')
+    if(form.kind==='Parcelada' && (!form.dueDate || Number(form.totalInstallments)<2)) return setError('Informe o vencimento e pelo menos 2 parcelas.')
     setBusy(true)
     try {
       await onSave({
@@ -313,10 +317,17 @@ function NewTransactionModal({type,user,categories,cards,onClose,onSave}){
         category_id:form.categoryId || null,
         card_id:form.cardId || null,
         kind:KIND_DB[form.kind] || 'other',
-        status:type==='receita'?'received':'paid',
+        status:form.status,
         type:type==='receita'?'income':'expense',
-        transaction_date:new Date().toISOString().slice(0,10),
+        transaction_date:item?.date || new Date().toISOString().slice(0,10),
         due_date:form.dueDate || null,
+        paid_date:['paid','received'].includes(form.status) ? new Date().toISOString().slice(0,10) : null,
+        paid_by:['paid','received'].includes(form.status) ? user.id : null,
+      }, {
+        id:item?.id || null,
+        kind:form.kind,
+        totalInstallments:Number(form.totalInstallments || 0),
+        repeatFuture:form.repeatFuture,
       })
       onClose()
     } catch(err) {
@@ -326,7 +337,27 @@ function NewTransactionModal({type,user,categories,cards,onClose,onSave}){
     }
   }
 
-  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><h2>{type==='receita'?'Nova receita':'Nova despesa'}</h2><button onClick={onClose}><X/></button></div><label>Descrição</label><input value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} placeholder={type==='receita'?'Ex.: Venda de material':'Ex.: Supermercado'}/><label>Valor</label><input inputMode="decimal" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(',','.')})} placeholder="0,00"/><label>Categoria</label><select value={form.categoryId} onChange={e=>setForm({...form,categoryId:e.target.value})}><option value="">Sem categoria</option>{availableCategories.map(cat=><option key={cat.id} value={cat.id}>{cat.name}</option>)}</select><label>Tipo</label><select value={form.kind} onChange={e=>setForm({...form,kind:e.target.value})}>{type==='receita'?<><option>Recorrente</option><option>Extra</option></>:<><option>Fixa</option><option>Variável</option><option>Parcelada</option><option>Cartão</option></>}</select>{type==='despesa' && <><label>Vencimento <small className="label-help">(opcional)</small></label><input type="date" value={form.dueDate} onChange={e=>setForm({...form,dueDate:e.target.value})}/>{cards.length>0 && <><label>Cartão <small className="label-help">(opcional)</small></label><select value={form.cardId} onChange={e=>setForm({...form,cardId:e.target.value})}><option value="">Não usar cartão</option>{cards.map(card=><option key={card.id} value={card.id}>{card.name}</option>)}</select></>}</>}<div className="modal-user">Lançado por <b>{user.name}</b></div>{error&&<div className="auth-msg">{error}</div>}<button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Salvar lançamento'}</button></div></div>
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal">
+    <div className="modal-head"><h2>{item?'Editar lançamento':type==='receita'?'Nova receita':'Nova despesa'}</h2><button onClick={onClose}><X/></button></div>
+    <label>Descrição</label>
+    <input value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} placeholder={type==='receita'?'Ex.: Venda de material':'Ex.: Supermercado'}/>
+    <label>Valor</label>
+    <input inputMode="decimal" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(',','.')})} placeholder="0,00"/>
+    <label>Categoria</label>
+    <select value={form.categoryId} onChange={e=>setForm({...form,categoryId:e.target.value})}><option value="">Sem categoria</option>{availableCategories.map(cat=><option key={cat.id} value={cat.id}>{cat.name}</option>)}</select>
+    <label>Tipo</label>
+    <select value={form.kind} onChange={e=>setForm({...form,kind:e.target.value})}>{type==='receita'?<><option>Recorrente</option><option>Extra</option></>:<><option>Fixa</option><option>Variável</option><option>Parcelada</option><option>Cartão</option></>}</select>
+    <label>Situação</label>
+    <select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{type==='receita'?<><option value="received">Recebida</option><option value="pending">Pendente</option></>:<><option value="paid">Pago</option><option value="pending">A pagar</option></>}</select>
+    <label>Vencimento <small className="label-help">(opcional para receitas)</small></label>
+    <input type="date" value={form.dueDate} onChange={e=>setForm({...form,dueDate:e.target.value})}/>
+    {type==='despesa' && cards.length>0 && <><label>Cartão <small className="label-help">(opcional)</small></label><select value={form.cardId} onChange={e=>setForm({...form,cardId:e.target.value})}><option value="">Não usar cartão</option>{cards.map(card=><option key={card.id} value={card.id}>{card.name}</option>)}</select></>}
+    {!item && form.kind==='Parcelada' && <><label>Quantidade de parcelas</label><input type="number" min="2" max="240" value={form.totalInstallments} onChange={e=>setForm({...form,totalInstallments:e.target.value})}/><small className="form-help">O sistema criará as parcelas mensais automaticamente.</small></>}
+    {!item && (form.kind==='Fixa' || form.kind==='Recorrente') && <label className="checkbox-line"><input type="checkbox" checked={form.repeatFuture} onChange={e=>setForm({...form,repeatFuture:e.target.checked})}/><span>Gerar também os próximos 11 meses</span></label>}
+    <div className="modal-user">{item?'Editando como':'Lançado por'} <b>{user.name}</b></div>
+    {error&&<div className="auth-msg">{error}</div>}
+    <button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':item?'Salvar alterações':'Salvar lançamento'}</button>
+  </div></div>
 }
 
 function NewCardModal({user,onClose,onSave}){
