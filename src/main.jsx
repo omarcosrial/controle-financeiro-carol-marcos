@@ -292,6 +292,282 @@ function Config({user,users,onLogout,onRotateJoinCode}){
   return <><PageHead title="Configurações" subtitle="Personalize o sistema, usuários e preferências."/><div className="two-col split-wide"><Card title="Usuários do sistema"><div className="list">{users.map(u=><div className="list-row" key={u.id}><div className="avatar">{u.name[0].toUpperCase()}</div><div className="grow"><b>{u.name}</b><small>{u.role === 'admin' ? 'Administrador' : 'Usuário da família'}</small></div><span className="pill">{u.is_active ? 'Ativo' : 'Inativo'}</span></div>)}</div></Card><Card title="Perfil da família"><div className="settings-text"><b>Carol & Marcos — Controle Financeiro</b><p>Controle financeiro compartilhado da família.</p><p>Usuário atual: <strong>{user.name}</strong></p>{user.role==='admin' && <div className="family-code"><span>Código para cadastrar o segundo usuário</span><strong>{familyCode || 'Gere um novo código'}</strong><button className="secondary-btn" onClick={rotate} disabled={rotating}>{rotating?'Gerando...':'Gerar novo código'}</button></div>}</div></Card></div><div className="two-col split-wide"><Card title="Segurança e acesso"><div className="settings-text"><p>✓ PIN armazenado com hash no banco</p><p>✓ Bloqueio temporário após tentativas incorretas</p><p>✓ Dados separados por família com políticas RLS</p><p className="warning">Evite usar o sistema em computadores públicos. A sessão fica salva neste navegador para facilitar o acesso.</p></div></Card><Card title="Backup e exportação"><div className="settings-text"><p>Os lançamentos agora ficam sincronizados no Supabase entre celular e computador.</p><button className="secondary-btn" onClick={onLogout}><LogOut size={18}/> Sair da conta</button></div></Card></div></>
 }
 
+
+function normalizeReceiptText(value=''){
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/\s+/g,' ')
+    .trim()
+}
+
+function parseReceiptAmount(value=''){
+  const clean = String(value)
+    .replace(/R\$/gi,'')
+    .replace(/\s/g,'')
+    .replace(/\.(?=\d{3}(?:\D|$))/g,'')
+    .replace(',','.')
+    .replace(/[^0-9.-]/g,'')
+  const number = Number(clean)
+  return Number.isFinite(number) ? number : 0
+}
+
+function categoryForReceiptItem(description,categories){
+  const text=normalizeReceiptText(description).toLowerCase()
+  const find=name=>categories.find(cat=>normalizeReceiptText(cat.name).toLowerCase()===normalizeReceiptText(name).toLowerCase())?.id || ''
+  if(/shampoo|sabonete|desodorante|absorvente|papel higienico|creme dental|pasta dental|escova dental/.test(text)) return find('Cuidado pessoal') || find('Supermercado')
+  if(/remedio|medicamento|dipirona|paracetamol|ibuprofeno|vitamina|farmac/.test(text)) return find('Saúde') || find('Supermercado')
+  if(/camiseta|camisa|calca|cueca|meia|roupa/.test(text)) return find('Roupa') || find('Supermercado')
+  if(/arroz|feijao|leite|carne|frango|bovina|suina|pao|queijo|presunto|ovo|cafe|acucar|farinha|macarrao|oleo|manteiga|margarina|refrigerante|suco|agua|cerveja|verdura|fruta|legume|biscoito|bolacha|iogurte/.test(text)) return find('Alimentação') || find('Supermercado')
+  return find('Supermercado') || find('Alimentação') || ''
+}
+
+function parseReceiptOcr(text,categories){
+  const rawLines=String(text||'').split(/\r?\n/).map(line=>line.trim()).filter(Boolean)
+  const lines=rawLines.map(line=>({raw:line,norm:normalizeReceiptText(line)}))
+  const noise=/\b(CNPJ|CPF|DANFE|NFC|SAT|CUPOM|DOCUMENTO|CHAVE|TRIBUT|ICMS|PAGAMENTO|FORMA DE PAGAMENTO|TROCO|DINHEIRO|CARTAO|PIX|DESCONTO|ACRESCIMO|SUBTOTAL|TOTAL A PAGAR|VALOR TOTAL|QTD TOTAL|QUANTIDADE TOTAL|CONSUMIDOR|OPERADOR|PROTOCOLO|AUTORIZACAO|CONTINGENCIA|EMISSAO)\b/i
+
+  let store=''
+  for(const line of lines.slice(0,12)){
+    if(line.norm.length<3 || line.norm.length>80) continue
+    if(noise.test(line.norm)) continue
+    if(!/[A-Za-zÀ-ÿ]{3}/.test(line.raw)) continue
+    store=line.raw.replace(/^[^A-Za-zÀ-ÿ]+/,'').trim()
+    if(store) break
+  }
+
+  let date=''
+  const dateRegex=/\b([0-3]?\d)[\/.-]([01]?\d)[\/.-](20\d{2})\b/
+  for(const line of lines){
+    const match=line.raw.match(dateRegex)
+    if(match){
+      date=`${match[3]}-${String(match[2]).padStart(2,'0')}-${String(match[1]).padStart(2,'0')}`
+      break
+    }
+  }
+  if(!date) date=new Date().toISOString().slice(0,10)
+
+  let total=0
+  const totalKeys=/TOTAL A PAGAR|VALOR TOTAL|TOTAL R\$|TOTAL\s*:/i
+  for(let i=lines.length-1;i>=0;i--){
+    if(!totalKeys.test(lines[i].norm)) continue
+    const nums=[...lines[i].raw.matchAll(/(?:R\$\s*)?(\d{1,6}(?:\.\d{3})*,\d{2}|\d{1,6}[.,]\d{2})/g)]
+    if(nums.length){
+      total=parseReceiptAmount(nums[nums.length-1][1])
+      if(total>0) break
+    }
+  }
+
+  const items=[]
+  let previousCandidate=''
+  for(const line of lines){
+    const moneyMatches=[...line.raw.matchAll(/(?:R\$\s*)?(\d{1,6}(?:\.\d{3})*,\d{2}|\d{1,6}[.,]\d{2})/g)]
+    const hasMoney=moneyMatches.length>0
+
+    if(!hasMoney){
+      if(!noise.test(line.norm) && /[A-Za-zÀ-ÿ]{3}/.test(line.raw) && line.norm.length<=90){
+        previousCandidate=line.raw
+      }
+      continue
+    }
+
+    if(noise.test(line.norm)) {
+      previousCandidate=''
+      continue
+    }
+
+    const amount=parseReceiptAmount(moneyMatches[moneyMatches.length-1][1])
+    if(amount<=0 || amount>100000) {
+      previousCandidate=''
+      continue
+    }
+
+    let description=line.raw
+    const last=moneyMatches[moneyMatches.length-1]
+    description=description.slice(0,last.index)
+    description=description
+      .replace(/\b\d{8,14}\b/g,' ')
+      .replace(/^\s*\d{1,4}\s+/, '')
+      .replace(/\b\d+[.,]\d{1,3}\s*[xX]\s*\d+[.,]\d{2}\b/g,' ')
+      .replace(/\b(UN|UND|UNID|KG|KILO|LT|L|PC|PCT|CX)\b/gi,' ')
+      .replace(/\s+/g,' ')
+      .trim()
+
+    if(!/[A-Za-zÀ-ÿ]{3}/.test(description) && previousCandidate){
+      description=previousCandidate
+    }
+
+    description=description.replace(/^[\-.:*#]+/,'').trim()
+    if(!description || description.length<3){
+      previousCandidate=''
+      continue
+    }
+
+    const normalizedDescription=normalizeReceiptText(description).toLowerCase()
+    if(items.some(item=>normalizeReceiptText(item.description).toLowerCase()===normalizedDescription && Math.abs(item.amount-amount)<0.001)){
+      previousCandidate=''
+      continue
+    }
+
+    items.push({
+      id:crypto.randomUUID(),
+      description,
+      amount,
+      categoryId:categoryForReceiptItem(description,categories),
+    })
+    previousCandidate=''
+  }
+
+  const sum=items.reduce((s,item)=>s+Number(item.amount||0),0)
+  if(!total && sum>0) total=sum
+
+  if(items.length===0 && total>0){
+    items.push({
+      id:crypto.randomUUID(),
+      description:store ? `Compra em ${store}` : 'Compra do cupom fiscal',
+      amount:total,
+      categoryId:categoryForReceiptItem('supermercado',categories),
+    })
+  }
+
+  return {store,date,total,items,rawText:text}
+}
+
+function ReceiptImportModal({user,categories,onClose,onImport}){
+  const [file,setFile]=useState(null)
+  const [preview,setPreview]=useState('')
+  const [progress,setProgress]=useState(0)
+  const [processing,setProcessing]=useState(false)
+  const [saving,setSaving]=useState(false)
+  const [error,setError]=useState('')
+  const [store,setStore]=useState('')
+  const [date,setDate]=useState(new Date().toISOString().slice(0,10))
+  const [total,setTotal]=useState('')
+  const [items,setItems]=useState([])
+  const [analyzed,setAnalyzed]=useState(false)
+
+  useEffect(()=>{
+    if(!file){ setPreview(''); return }
+    const url=URL.createObjectURL(file)
+    setPreview(url)
+    return ()=>URL.revokeObjectURL(url)
+  },[file])
+
+  const analyze=async()=>{
+    if(!file) return setError('Escolha ou fotografe um cupom fiscal.')
+    setError('')
+    setProcessing(true)
+    setProgress(1)
+    try{
+      const {createWorker}=await import('tesseract.js')
+      const worker=await createWorker('por',1,{
+        logger:message=>{
+          if(message.status==='recognizing text' && Number.isFinite(message.progress)){
+            setProgress(Math.max(1,Math.round(message.progress*100)))
+          }
+        }
+      })
+      const result=await worker.recognize(file)
+      await worker.terminate()
+      const parsed=parseReceiptOcr(result?.data?.text || '',categories)
+      setStore(parsed.store || '')
+      setDate(parsed.date)
+      setTotal(parsed.total ? String(parsed.total.toFixed(2)).replace('.',',') : '')
+      setItems(parsed.items)
+      setAnalyzed(true)
+      setProgress(100)
+    }catch(err){
+      setError('Não consegui ler esse cupom. Tente uma foto mais reta, iluminada e com o texto inteiro visível.')
+    }finally{
+      setProcessing(false)
+    }
+  }
+
+  const updateItem=(id,patch)=>setItems(current=>current.map(item=>item.id===id?{...item,...patch}:item))
+  const removeItem=id=>setItems(current=>current.filter(item=>item.id!==id))
+  const addItem=()=>setItems(current=>[...current,{id:crypto.randomUUID(),description:'',amount:'',categoryId:categoryForReceiptItem('supermercado',categories)}])
+
+  const itemsTotal=items.reduce((sum,item)=>sum+Number(item.amount||0),0)
+  const receiptTotal=parseReceiptAmount(total)
+  const difference=receiptTotal ? Number((itemsTotal-receiptTotal).toFixed(2)) : 0
+
+  const confirm=async()=>{
+    const cleanItems=items
+      .map(item=>({...item,description:item.description.trim(),amount:Number(item.amount)}))
+      .filter(item=>item.description && item.amount>0)
+
+    if(!cleanItems.length) return setError('Revise os itens antes de salvar.')
+    setSaving(true)
+    setError('')
+    try{
+      await onImport({
+        storeName:store.trim() || 'Supermercado',
+        receiptDate:date || new Date().toISOString().slice(0,10),
+        totalAmount:receiptTotal || itemsTotal,
+        items:cleanItems,
+      })
+      onClose()
+    }catch(err){
+      setError(err?.message || 'Não foi possível salvar o cupom.')
+    }finally{
+      setSaving(false)
+    }
+  }
+
+  return <div className="modal-backdrop receipt-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget&&!processing&&!saving)onClose()}}>
+    <div className="modal receipt-modal">
+      <div className="modal-head"><h2>🧾 Ler cupom fiscal</h2><button onClick={onClose} disabled={processing||saving}><X/></button></div>
+
+      {!analyzed && <>
+        <div className="receipt-intro"><b>Fotografe ou envie o cupom</b><span>O reconhecimento acontece no próprio navegador. Antes de salvar, você poderá conferir e corrigir os itens.</span></div>
+        <label className="receipt-upload">
+          <input type="file" accept="image/*" capture="environment" onChange={event=>setFile(event.target.files?.[0]||null)}/>
+          <ReceiptText size={28}/>
+          <b>{file ? 'Trocar imagem' : 'Tirar foto ou escolher imagem'}</b>
+          <small>JPG, PNG ou foto da câmera</small>
+        </label>
+        {preview&&<img className="receipt-preview" src={preview} alt="Prévia do cupom fiscal"/>}
+        {processing&&<div className="ocr-progress"><div><span>Reconhecendo texto...</span><b>{progress}%</b></div><div className="progress"><i style={{width:`${progress}%`}}/></div><small>Em celulares mais simples isso pode levar alguns segundos.</small></div>}
+        {error&&<div className="auth-msg">{error}</div>}
+        <button className="primary-btn" disabled={!file||processing} onClick={analyze}>{processing?'Lendo cupom...':'Ler cupom automaticamente'}</button>
+      </>}
+
+      {analyzed&&<>
+        <div className="receipt-summary-grid">
+          <div><label>Estabelecimento</label><input value={store} onChange={event=>setStore(event.target.value)} placeholder="Nome do supermercado"/></div>
+          <div><label>Data da compra</label><input type="date" value={date} onChange={event=>setDate(event.target.value)}/></div>
+          <div><label>Total reconhecido</label><input inputMode="decimal" value={total} onChange={event=>setTotal(event.target.value)} placeholder="0,00"/></div>
+          <div className="receipt-readonly"><span>Soma dos itens</span><strong>{money(itemsTotal)}</strong></div>
+        </div>
+
+        {Math.abs(difference)>0.02&&<div className="receipt-warning">⚠ A soma dos itens está {difference>0?'acima':'abaixo'} do total do cupom em <b>{money(Math.abs(difference))}</b>. Revise os itens antes de confirmar.</div>}
+
+        <div className="receipt-items-head"><div><h3>Itens encontrados</h3><small>{items.length} item(ns)</small></div><button className="secondary-btn compact" onClick={addItem}><Plus size={16}/> Adicionar item</button></div>
+
+        <div className="receipt-items">
+          {items.map((item,index)=><div className="receipt-item" key={item.id}>
+            <span className="receipt-item-number">{index+1}</span>
+            <input className="receipt-item-desc" value={item.description} onChange={event=>updateItem(item.id,{description:event.target.value})} placeholder="Descrição do item"/>
+            <select value={item.categoryId} onChange={event=>updateItem(item.id,{categoryId:event.target.value})}>
+              <option value="">Sem categoria</option>
+              {categories.filter(cat=>['expense','both'].includes(cat.type)).map(cat=><option key={cat.id} value={cat.id}>{cat.name}</option>)}
+            </select>
+            <input className="receipt-item-value" inputMode="decimal" value={item.amount} onChange={event=>updateItem(item.id,{amount:event.target.value.replace(',','.')})}/>
+            <button className="receipt-remove" title="Remover item" onClick={()=>removeItem(item.id)}><Trash2 size={17}/></button>
+          </div>)}
+        </div>
+
+        {error&&<div className="auth-msg">{error}</div>}
+        <div className="receipt-footer">
+          <button className="secondary-btn" disabled={saving} onClick={()=>{setAnalyzed(false);setItems([]);setError('')}}>Ler outra foto</button>
+          <button className="primary-btn" disabled={saving||!items.length} onClick={confirm}><Save size={18}/> {saving?'Salvando...':'Confirmar e lançar itens'}</button>
+        </div>
+        <small className="receipt-footnote">Cada item será lançado como despesa e ficará identificado como lançado por {user.name}.</small>
+      </>}
+    </div>
+  </div>
+}
+
 function NewTransactionModal({type,user,categories,cards,item,onClose,onSave}){
   const availableCategories = categories.filter(c => type==='receita' ? ['income','both'].includes(c.type) : ['expense','both'].includes(c.type))
   const [form,setForm]=useState({
