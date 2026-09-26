@@ -2,3 +2,19 @@
 @media(max-width:1050px){.stats-grid,.stats-grid.four{grid-template-columns:repeat(2,1fr)}.credit-cards{grid-template-columns:1fr}.two-col,.split-wide{grid-template-columns:1fr}.pie-wrap{justify-content:center}.budget-list>div{grid-template-columns:1fr}.budget-list>div>div:first-child{display:block}.budget-list em{text-align:left}}
 @media(max-width:760px){body{background:linear-gradient(180deg,#08389a 0,#0c56ce 260px,#eef5ff 260px)}.sidebar{display:none}.main{margin-left:0;padding-bottom:82px}.topbar{height:72px;background:transparent;color:#fff;border:0;padding:0 18px}.topbar b{display:none}.top-date{border-color:#ffffff66;background:#ffffff0d}.content{padding:18px 14px}.page-head{color:#fff;align-items:flex-end}.page-head h1{font-size:34px}.page-head p{color:#e6edff}.page-head .primary-btn.compact{position:fixed;right:18px;bottom:90px;width:52px;height:52px;border-radius:50%;font-size:0;z-index:25;padding:0}.stats-grid,.stats-grid.four{grid-template-columns:1fr 1fr;gap:10px}.stat-card{padding:14px;border-radius:15px;align-items:flex-start}.stat-icon{width:42px;height:42px}.stat-card strong{font-size:19px}.stat-card span{font-size:12px}.two-col,.split-wide{grid-template-columns:1fr}.card{border-radius:16px;padding:15px}.chart-box{height:230px}.pie-wrap{flex-direction:column}.pie{width:220px;height:220px}.legend{width:100%}.credit-cards{display:flex;overflow:auto;scroll-snap-type:x mandatory;padding-bottom:6px}.credit-card{min-width:82%;scroll-snap-align:start}.bottom-nav{position:fixed;display:grid;grid-template-columns:1fr 1fr 70px 1fr 1fr;align-items:center;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #dfe8f6;padding:7px 8px max(7px,env(safe-area-inset-bottom));z-index:40}.bottom-nav button{border:0;background:transparent;color:#6f7fa5;display:grid;place-items:center;gap:2px;font-size:11px}.bottom-nav button.active{color:#0c61f1}.bottom-nav svg{width:21px}.bottom-nav .fab{width:58px;height:58px;border-radius:50%;background:#0c61f1;color:#fff;margin:-26px auto 0;box-shadow:0 8px 20px #0c61f14d}.bottom-nav .fab svg{width:30px;height:30px}.auth-shell{grid-template-columns:1fr;background:linear-gradient(180deg,#07389b 0,#0b54ca 33%,#f7fbff 33%)}.auth-brand{min-height:280px;padding:35px 20px 22px;justify-content:flex-start}.auth-brand h1{font-size:36px}.brand-sub{font-size:10px;letter-spacing:4px}.brand-tag{font-size:16px;margin-bottom:0}.auth-panel{padding:0 14px 28px;background:transparent;align-items:start}.auth-card{margin-top:-12px;border-radius:24px;padding:24px 18px}.auth-card h2{font-size:30px}.verse-card{font-size:14px}.budget-list>div{grid-template-columns:1fr}}
 @media(max-width:410px){.stats-grid,.stats-grid.four{grid-template-columns:1fr}.auth-brand{min-height:250px}.brand-tag{display:none}}
+
+
+/* Supabase / formulários online */
+.label-help{font-weight:500;color:#8391b4}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-row input{width:100%;padding:13px;border:1px solid #cfdaf0;border-radius:10px}
+.family-code{margin-top:16px;padding:16px;border-radius:14px;background:#eef6ff;display:grid;gap:9px}
+.family-code span{font-size:13px;color:#60739f}
+.family-code strong{font-size:24px;letter-spacing:3px;color:#0c61ee}
+.loading-card{min-height:320px;background:#fff;border:1px solid #e3ebf8;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:30px;text-align:center}
+.loading-card p{color:#6677a3;margin:0;max-width:520px}
+.spinner{width:42px;height:42px;border-radius:50%;border:4px solid #dbe7fb;border-top-color:#0c61ee;animation:cm-spin .8s linear infinite}
+.error-state{color:#b42333}
+@keyframes cm-spin{to{transform:rotate(360deg)}}
+button:disabled{opacity:.65;cursor:not-allowed}
+@media(max-width:760px){.form-row{grid-template-columns:1fr}.family-code strong{font-size:20px}}
