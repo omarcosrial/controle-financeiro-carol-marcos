@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import {
   Home, TrendingUp, TrendingDown, CreditCard, Target, BarChart3, Settings,
   Plus, Bell, LogOut, Wallet, PiggyBank, Clock3, ReceiptText, UserRound,
-  CalendarDays, ChevronRight, X, Save, Eye, EyeOff, CheckCircle2
+  CalendarDays, ChevronRight, X, Save, Eye, EyeOff, CheckCircle2, Pencil, Trash2
 } from 'lucide-react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell
@@ -75,9 +75,11 @@ function txToUi(tx, categoryMap, userMap){
     categoryId: tx.category_id,
     cardId: tx.card_id,
     status: STATUS_PT[tx.status] || tx.status,
+    statusKey: tx.status,
     kind: KIND_PT[tx.kind] || tx.kind,
     date: tx.transaction_date,
     dueDate: tx.due_date,
+    paidDate: tx.paid_date,
     by: userMap[tx.created_by] || 'Usuário',
     type: tx.type,
   }
@@ -192,9 +194,35 @@ function Topbar({user}){ return <header className="topbar"><div className="top-d
 function PageHead({title,subtitle,action}){ return <div className="page-head"><div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div> }
 function Card({title,children}){ return <section className="card"><div className="card-title"><h3>{title}</h3></div>{children}</section> }
 
-function List({rows=[]}){
-  return <div className="list">{rows.length===0?<div className="empty">Nenhum lançamento.</div>:rows.map(r=><div className="list-row" key={`${r.type||''}-${r.id}-${r.desc}`}><div className={`mini-icon ${r.type==='in'?'income':'expense'}`}>{r.type==='in'?<TrendingUp size={18}/>:<ReceiptText size={18}/>}</div><div className="grow"><b>{r.desc}</b><small>{r.category || r.kind || 'Lançamento'} {r.by ? `• por ${r.by}` : ''}</small></div><strong className={r.type==='in'?'good':'bad'}>{r.type==='in'?'+ ':'- '}{money(r.amount)}</strong><ChevronRight size={17}/></div>)}</div>
+function getDisplayStatus(item){
+  if (item.type === 'expense' && item.statusKey === 'pending' && item.dueDate) {
+    const today = new Date().toISOString().slice(0,10)
+    if (item.dueDate < today) return 'Em atraso'
+  }
+  return item.status || 'Pendente'
 }
+
+function StatusBadge({item}){
+  const label = getDisplayStatus(item)
+  const key = label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'-')
+  return <span className={`status-badge status-${key}`}>{label}</span>
+}
+
+function TransactionList({rows=[],onEdit,onDelete,onToggle}){
+  return <div className="list">{rows.length===0?<div className="empty">Nenhum lançamento.</div>:rows.map(r=><div className="list-row transaction-row" key={`${r.type||''}-${r.id}-${r.desc}`}>
+    <div className={`mini-icon ${r.type==='income'||r.type==='in'?'income':'expense'}`}>{r.type==='income'||r.type==='in'?<TrendingUp size={18}/>:<ReceiptText size={18}/>}</div>
+    <div className="grow"><b>{r.desc}</b><small>{r.category || r.kind || 'Lançamento'} {r.by ? `• por ${r.by}` : ''}{r.dueDate ? ` • vence ${new Date(r.dueDate+'T12:00:00').toLocaleDateString('pt-BR')}` : ''}</small></div>
+    {r.statusKey && <StatusBadge item={r}/>}
+    <strong className={r.type==='income'||r.type==='in'?'good':'bad'}>{r.type==='income'||r.type==='in'?'+ ':'- '}{money(r.amount)}</strong>
+    {(onEdit||onDelete||onToggle) && <div className="row-actions">
+      {onToggle && <button title="Alterar situação" onClick={()=>onToggle(r)}><CheckCircle2 size={17}/></button>}
+      {onEdit && <button title="Editar" onClick={()=>onEdit(r)}><Pencil size={17}/></button>}
+      {onDelete && <button className="danger-action" title="Excluir" onClick={()=>onDelete(r)}><Trash2 size={17}/></button>}
+    </div>}
+  </div>)}</div>
+}
+
+function List({rows=[]}){ return <TransactionList rows={rows}/> }
 
 function Dashboard({expenses,incomes}){
   const income = incomes.reduce((s,x)=>s+Number(x.amount),0), spent = expenses.reduce((s,x)=>s+Number(x.amount),0), balance = income-spent
