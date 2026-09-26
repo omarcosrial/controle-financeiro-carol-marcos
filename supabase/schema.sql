@@ -310,9 +310,9 @@ begin
   set failed_attempts = 0, locked_until = null, updated_at = now()
   where id = v_user.id;
 
-  delete from public.app_sessions
-  where user_id = v_user.id
-    and expires_at <= now();
+  delete from public.app_sessions s
+  where s.user_id = v_user.id
+    and s.expires_at <= now();
 
   v_session_token := encode(extensions.gen_random_bytes(32), 'hex');
 
