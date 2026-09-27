@@ -318,6 +318,51 @@ function buildCardInvoices(cards,expenses){
   })).sort((a,b)=>a.dueDate.localeCompare(b.dueDate))
 }
 
+const CARD_COLOR_OPTIONS = [
+  {name:'Azul',value:'#175CD3'},
+  {name:'Roxo',value:'#6D28D9'},
+  {name:'Verde',value:'#087F5B'},
+  {name:'Preto',value:'#111827'},
+  {name:'Grafite',value:'#334155'},
+  {name:'Vermelho',value:'#B42318'},
+  {name:'Laranja',value:'#C2410C'},
+  {name:'Rosa',value:'#BE185D'},
+]
+
+const CARD_BRANDS = [
+  {value:'mastercard',label:'Mastercard'},
+  {value:'visa',label:'Visa'},
+  {value:'elo',label:'Elo'},
+  {value:'nubank',label:'Nubank'},
+  {value:'inter',label:'Inter'},
+  {value:'picpay',label:'PicPay'},
+  {value:'caixa',label:'CAIXA'},
+  {value:'amex',label:'American Express'},
+  {value:'outro',label:'Outro'},
+]
+
+function cardTextColor(hex='#175CD3'){
+  const normalized=String(hex||'').replace('#','')
+  if(!/^[0-9a-fA-F]{6}$/.test(normalized)) return '#ffffff'
+  const r=parseInt(normalized.slice(0,2),16)
+  const g=parseInt(normalized.slice(2,4),16)
+  const b=parseInt(normalized.slice(4,6),16)
+  const luminance=(0.299*r+0.587*g+0.114*b)/255
+  return luminance>.68 ? '#172554' : '#ffffff'
+}
+
+function CardBrandMark({brand='outro'}){
+  const key=String(brand||'outro').toLowerCase()
+  if(key==='mastercard') return <div className="card-brand-logo mastercard-mark" title="Mastercard"><i/><i/></div>
+  if(key==='visa') return <div className="card-brand-logo brand-word visa-mark">VISA</div>
+  if(key==='elo') return <div className="card-brand-logo brand-word elo-mark">elo</div>
+  if(key==='nubank') return <div className="card-brand-logo brand-word nu-mark">nu</div>
+  if(key==='inter') return <div className="card-brand-logo brand-word inter-mark">inter</div>
+  if(key==='picpay') return <div className="card-brand-logo brand-word picpay-mark">PicPay</div>
+  if(key==='caixa') return <div className="card-brand-logo brand-word caixa-mark">CAIXA</div>
+  if(key==='amex') return <div className="card-brand-logo brand-word amex-mark">AMEX</div>
+  return <div className="card-brand-logo generic-mark"><CreditCard size={22}/></div>
+}
 function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice}){
   const invoices=buildCardInvoices(cards,expenses)
   const totalLimit=cards.reduce((sum,card)=>sum+Number(card.limit||0),0)
@@ -1300,6 +1345,8 @@ function NewTransactionModal({type,user,categories,cards,item,onClose,onSave}){
 function NewCardModal({user,card,onClose,onSave}){
   const [form,setForm] = useState({
     name:card?.name || '',
+    brand:card?.brand || 'mastercard',
+    color:card?.color || '#175CD3',
     last4:card?.last4 || '',
     limit:card?.limit ? String(card.limit) : '',
     closingDay:card?.closingDay ? String(card.closingDay) : '',
@@ -1319,6 +1366,8 @@ function NewCardModal({user,card,onClose,onSave}){
       await onSave({
         id:card?.id || null,
         name: form.name.trim(),
+        brand: form.brand,
+        color: form.color,
         last4: form.last4.replace(/\D/g,'').slice(-4) || null,
         credit_limit: Number(form.limit),
         closing_day: Number(form.closingDay),
@@ -1652,6 +1701,8 @@ function App(){
       setCards((cardRows || []).map(card=>({
         id:card.id,
         name:card.name,
+        brand:card.brand || 'outro',
+        color:card.color || '#175CD3',
         last4:card.last4,
         limit:Number(card.credit_limit || 0),
         used:Number(usageByCard[card.id] || 0),
