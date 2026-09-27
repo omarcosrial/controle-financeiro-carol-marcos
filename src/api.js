@@ -126,6 +126,22 @@ export const api = {
       prefer: 'return=representation',
     }),
 
+  updateCard: (session, id, patch) =>
+    request(`credit_cards?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: patch,
+      session,
+      prefer: 'return=representation',
+    }),
+
+  payCardInvoice: (session, cardId, dueDate, patch) =>
+    request(`transactions?card_id=eq.${encodeURIComponent(cardId)}&due_date=eq.${encodeURIComponent(dueDate)}&status=neq.cancelled`, {
+      method: 'PATCH',
+      body: patch,
+      session,
+      prefer: 'return=representation',
+    }),
+
   listGoals: session =>
     request('goals?select=id,title,target_amount,current_amount,due_date,status,priority,created_by,created_at&order=created_at.desc', { session }),
 
