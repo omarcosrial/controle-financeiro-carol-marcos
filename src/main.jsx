@@ -80,9 +80,13 @@ function txToUi(tx, categoryMap, userMap){
     date: tx.transaction_date,
     dueDate: tx.due_date,
     paidDate: tx.paid_date,
+    installmentGroup: tx.installment_group,
     installmentNumber: tx.installment_number,
     totalInstallments: tx.total_installments,
     isRecurring: tx.is_recurring,
+    merchant: tx.merchant,
+    source: tx.source,
+    notes: tx.notes,
     by: userMap[tx.created_by] || 'Usuário',
     type: tx.type,
   }
@@ -254,9 +258,131 @@ function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
   const byCat=Object.entries(expenses.filter(x=>x.statusKey!=='cancelled').reduce((a,x)=>{a[x.category]=(a[x.category]||0)+Number(x.amount);return a},{})).map(([name,value])=>({name,value}))
   return <><PageHead title="Despesas" subtitle="Controle e acompanhamento dos seus gastos." action={<div className="page-actions"><button className="secondary-btn compact" onClick={onReceipt}><ReceiptText size={18}/> Ler cupom</button><button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button></div>}/><div className="stats-grid four"><Stat icon={CreditCard} label="Despesas pagas" value={money(paid)} tone="red"/><Stat icon={Clock3} label="A pagar" value={money(pending)} tone="orange"/><Stat icon={TrendingDown} label="Em atraso" value={money(overdue)} tone="red"/><Stat icon={Target} label="Total previsto" value={money(total)} tone="blue"/></div><div className="two-col split-wide"><Card title="Despesas do mês"><TransactionList rows={expenses} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria"><div className="pie-wrap vertical"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,8).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div></Card></div></>
 }
-function Cartoes({cards,onNew}){
-  const totalLimit=cards.reduce((s,c)=>s+c.limit,0), used=cards.reduce((s,c)=>s+c.used,0)
-  return <><PageHead title="Cartões" subtitle="Controle de cartões, compras e faturas." action={<button className="primary-btn compact" onClick={()=>onNew('card')}><Plus size={18}/> Novo cartão</button>}/><div className="stats-grid four"><Stat icon={CreditCard} label="Limite total" value={money(totalLimit)}/><Stat icon={Wallet} label="Disponível" value={money(totalLimit-used)} tone="green"/><Stat icon={ReceiptText} label="Fatura atual" value={money(used)} tone="red"/><Stat icon={CalendarDays} label="Próximo vencimento" value={cards[0]?.due || '—'} tone="orange"/></div><Card title="Meus cartões">{cards.length ? <div className="credit-cards">{cards.map((card,i)=><div className={`credit-card cc${(i%3)+1}`} key={card.id}><small>Carol & Marcos</small><h3>{card.name}</h3><div className="cc-number">•••• {card.last4 || '0000'}</div><div className="cc-bottom"><span>Limite<br/><b>{money(card.limit)}</b></span><span>Disponível<br/><b>{money(Math.max(card.limit-card.used,0))}</b></span></div></div>)}</div> : <div className="empty">Nenhum cartão cadastrado. Clique em “Novo cartão”.</div>}</Card><div className="two-col"><Card title="Próximas faturas"><List rows={cards.map(card=>({id:card.id,desc:card.name,amount:card.used,category:`Vence ${card.due || '—'}`,type:'out'}))}/></Card><Card title="Parcelamentos ativos"><div className="empty">Os parcelamentos serão exibidos aqui quando forem cadastrados nas despesas.</div></Card></div></>
+function safeDateWithDay(year,monthIndex,day){
+  const lastDay=new Date(year,monthIndex+1,0).getDate()
+  const finalDay=Math.min(Math.max(1,Number(day||1)),lastDay)
+  const date=new Date(year,monthIndex,finalDay,12,0,0)
+  const y=date.getFullYear()
+  const m=String(date.getMonth()+1).padStart(2,'0')
+  const d=String(date.getDate()).padStart(2,'0')
+  return `${y}-${m}-${d}`
+}
+
+function cardFirstDueDate(purchaseDate,closingDay,dueDay){
+  const base=new Date((purchaseDate||new Date().toISOString().slice(0,10))+'T12:00:00')
+  const closeDay=Number(closingDay||1)
+  const payDay=Number(dueDay||1)
+  let closeMonth=base.getMonth()
+  let closeYear=base.getFullYear()
+  if(base.getDate()>closeDay){
+    closeMonth+=1
+    if(closeMonth>11){closeMonth=0;closeYear+=1}
+  }
+  const closeIso=safeDateWithDay(closeYear,closeMonth,closeDay)
+  const closeDate=new Date(closeIso+'T12:00:00')
+  let dueMonth=closeDate.getMonth()
+  let dueYear=closeDate.getFullYear()
+  let dueIso=safeDateWithDay(dueYear,dueMonth,payDay)
+  if(new Date(dueIso+'T12:00:00')<=closeDate){
+    dueMonth+=1
+    if(dueMonth>11){dueMonth=0;dueYear+=1}
+    dueIso=safeDateWithDay(dueYear,dueMonth,payDay)
+  }
+  return dueIso
+}
+
+function buildCardInvoices(cards,expenses){
+  const cardMap=Object.fromEntries(cards.map(card=>[card.id,card]))
+  const groups={}
+  expenses.filter(item=>item.cardId && item.dueDate && item.statusKey!=='cancelled').forEach(item=>{
+    const key=`${item.cardId}|${item.dueDate}`
+    if(!groups[key]){
+      groups[key]={
+        id:key,
+        cardId:item.cardId,
+        cardName:cardMap[item.cardId]?.name || 'Cartão',
+        dueDate:item.dueDate,
+        amount:0,
+        paidAmount:0,
+        items:[],
+      }
+    }
+    groups[key].amount+=Number(item.amount||0)
+    if(item.statusKey==='paid') groups[key].paidAmount+=Number(item.amount||0)
+    groups[key].items.push(item)
+  })
+  return Object.values(groups).map(group=>({
+    ...group,
+    paid:group.items.length>0 && group.items.every(item=>item.statusKey==='paid'),
+  })).sort((a,b)=>a.dueDate.localeCompare(b.dueDate))
+}
+
+function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice}){
+  const invoices=buildCardInvoices(cards,expenses)
+  const totalLimit=cards.reduce((sum,card)=>sum+Number(card.limit||0),0)
+  const used=cards.reduce((sum,card)=>sum+Number(card.used||0),0)
+  const unpaidInvoices=invoices.filter(invoice=>!invoice.paid)
+  const byCardCurrent=cards.map(card=>unpaidInvoices.find(invoice=>invoice.cardId===card.id)).filter(Boolean)
+  const currentInvoice=byCardCurrent.reduce((sum,invoice)=>sum+Number(invoice.amount||0),0)
+  const nextInvoice=unpaidInvoices[0]
+  const installmentGroups=Object.values(
+    expenses.filter(item=>item.cardId && item.installmentGroup && Number(item.totalInstallments)>1 && item.statusKey!=='cancelled').reduce((acc,item)=>{
+      const key=item.installmentGroup
+      if(!acc[key]) acc[key]={id:key,description:item.desc.replace(/\s+\d+\/\d+$/,''),cardId:item.cardId,total:item.totalInstallments,paid:0,amount:0,nextDue:null}
+      acc[key].amount+=Number(item.amount||0)
+      if(item.statusKey==='paid') acc[key].paid+=1
+      if(item.statusKey!=='paid' && (!acc[key].nextDue || item.dueDate<acc[key].nextDue)) acc[key].nextDue=item.dueDate
+      return acc
+    },{})
+  )
+  const cardName=id=>cards.find(card=>card.id===id)?.name || 'Cartão'
+
+  return <><PageHead title="Cartões" subtitle="Controle de cartões, compras e faturas." action={<div className="page-actions"><button className="secondary-btn compact" onClick={onPurchase} disabled={!cards.length}><CreditCard size={18}/> Nova compra</button><button className="primary-btn compact" onClick={onNew}><Plus size={18}/> Novo cartão</button></div>}/>
+    <div className="stats-grid four">
+      <Stat icon={CreditCard} label="Limite total" value={money(totalLimit)}/>
+      <Stat icon={Wallet} label="Limite disponível" value={money(Math.max(totalLimit-used,0))} tone="green"/>
+      <Stat icon={ReceiptText} label="Faturas em aberto" value={money(currentInvoice)} tone="red"/>
+      <Stat icon={CalendarDays} label="Próximo vencimento" value={nextInvoice ? new Date(nextInvoice.dueDate+'T12:00:00').toLocaleDateString('pt-BR') : '—'} tone="orange"/>
+    </div>
+
+    <Card title="Meus cartões">
+      {cards.length ? <div className="credit-cards">{cards.map((card,i)=>{
+        const invoice=unpaidInvoices.find(item=>item.cardId===card.id)
+        return <div className={`credit-card cc${(i%3)+1}`} key={card.id}>
+          <small>Carol & Marcos</small>
+          <h3>{card.name}</h3>
+          <div className="cc-number">•••• {card.last4 || '0000'}</div>
+          <div className="cc-cycle">Fecha dia <b>{card.closingDay || '—'}</b> • Vence dia <b>{card.dueDay || '—'}</b></div>
+          <div className="cc-bottom"><span>Disponível<br/><b>{money(Math.max(card.limit-card.used,0))}</b></span><span>Próxima fatura<br/><b>{money(invoice?.amount||0)}</b></span></div>
+        </div>
+      })}</div> : <div className="empty">Nenhum cartão cadastrado. Clique em “Novo cartão”.</div>}
+    </Card>
+
+    <div className="two-col split-wide">
+      <Card title="Faturas">
+        <div className="invoice-list">
+          {invoices.length===0 ? <div className="empty">As faturas aparecerão aqui quando você lançar compras no cartão.</div> : invoices.slice(0,12).map(invoice=><div className="invoice-row" key={invoice.id}>
+            <div className="invoice-date"><span>{new Date(invoice.dueDate+'T12:00:00').toLocaleDateString('pt-BR',{month:'short'})}</span><b>{new Date(invoice.dueDate+'T12:00:00').getDate()}</b></div>
+            <div className="grow"><b>{invoice.cardName}</b><small>{invoice.items.length} lançamento(s) • vence {new Date(invoice.dueDate+'T12:00:00').toLocaleDateString('pt-BR')}</small></div>
+            <strong>{money(invoice.amount)}</strong>
+            <span className={`status-badge ${invoice.paid?'status-pago':(invoice.dueDate<new Date().toISOString().slice(0,10)?'status-em-atraso':'status-pendente')}`}>{invoice.paid?'Paga':(invoice.dueDate<new Date().toISOString().slice(0,10)?'Em atraso':'Aberta')}</span>
+            {!invoice.paid && <button className="secondary-btn compact invoice-pay" onClick={()=>onPayInvoice(invoice)}>Marcar paga</button>}
+          </div>)}
+        </div>
+      </Card>
+
+      <Card title="Parcelamentos ativos">
+        <div className="installment-list">
+          {installmentGroups.length===0 ? <div className="empty">Nenhuma compra parcelada ativa.</div> : installmentGroups.slice(0,10).map(group=><div className="installment-card" key={group.id}>
+            <div><b>{group.description}</b><small>{cardName(group.cardId)}</small></div>
+            <strong>{group.paid}/{group.total}</strong>
+            <div className="progress"><i style={{width:`${Math.min(100,(group.paid/group.total)*100)}%`}}/></div>
+            <small>{group.nextDue ? `Próxima: ${new Date(group.nextDue+'T12:00:00').toLocaleDateString('pt-BR')}` : 'Parcelamento quitado'} • Total {money(group.amount)}</small>
+          </div>)}
+        </div>
+      </Card>
+    </div>
+  </>
 }
 
 function Planejamento({expenses,incomes}){
