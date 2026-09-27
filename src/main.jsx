@@ -1922,13 +1922,14 @@ function App(){
   }
 
   const saveCard = async card => {
-    const {id,...payload}=card
+    const {id,created_by,...payload}=card
     if(id){
       await api.updateCard(user.token,id,payload)
     }else{
       await api.addCard(user.token, {
         ...payload,
         household_id:user.householdId,
+        created_by:user.id,
       })
     }
     await loadData(user)
