@@ -1144,7 +1144,7 @@ function App(){
       setIncomes(uiTransactions.filter(tx=>tx.type==='income'))
       setExpenses(uiTransactions.filter(tx=>tx.type==='expense'))
 
-      const usageByCard = uiTransactions.filter(tx=>tx.type==='expense' && tx.cardId && tx.statusKey!=='cancelled').reduce((acc,tx)=>{
+      const usageByCard = uiTransactions.filter(tx=>tx.type==='expense' && tx.cardId && tx.statusKey!=='paid' && tx.statusKey!=='cancelled').reduce((acc,tx)=>{
         acc[tx.cardId] = (acc[tx.cardId] || 0) + Number(tx.amount)
         return acc
       },{})
@@ -1155,6 +1155,8 @@ function App(){
         last4:card.last4,
         limit:Number(card.credit_limit || 0),
         used:Number(usageByCard[card.id] || 0),
+        closingDay:Number(card.closing_day || 0),
+        dueDay:Number(card.due_day || 0),
         close:card.closing_day ? String(card.closing_day).padStart(2,'0') : '—',
         due:card.due_day ? String(card.due_day).padStart(2,'0') : '—',
       })))
@@ -1287,6 +1289,50 @@ function App(){
     await loadData(user)
   }
 
+  const saveCardPurchase = async purchase => {
+    const count=Math.max(1,Number(purchase.installments||1))
+    const totalCents=Math.round(Number(purchase.total||0)*100)
+    const baseCents=Math.floor(totalCents/count)
+    const remainder=totalCents-baseCents*count
+    const group=count>1 ? crypto.randomUUID() : null
+
+    const rows=Array.from({length:count},(_,index)=>{
+      const amountCents=baseCents+(index===count-1?remainder:0)
+      const dueDate=addMonths(purchase.firstDue,index)
+      return {
+        household_id:user.householdId,
+        type:'expense',
+        description:count>1 ? `${purchase.description} ${index+1}/${count}` : purchase.description,
+        amount:amountCents/100,
+        category_id:purchase.categoryId,
+        card_id:purchase.card.id,
+        kind:count>1?'installment':'card',
+        status:'pending',
+        transaction_date:dueDate,
+        due_date:dueDate,
+        payment_method:'Cartão',
+        installment_group:group,
+        installment_number:index+1,
+        total_installments:count,
+        merchant:purchase.description,
+        notes:`Compra realizada em ${new Date(purchase.purchaseDate+'T12:00:00').toLocaleDateString('pt-BR')} no cartão ${purchase.card.name}`,
+        source:'card',
+      }
+    })
+
+    await api.addTransaction(user.token,rows)
+    await loadData(user)
+  }
+
+  const payCardInvoice = async invoice => {
+    await api.payCardInvoice(user.token,invoice.cardId,invoice.dueDate,{
+      status:'paid',
+      paid_date:new Date().toISOString().slice(0,10),
+      paid_by:user.id,
+    })
+    await loadData(user)
+  }
+
   const saveReceipt = async receipt => {
     const receiptRows = await api.addReceiptImport(user.token, {
       household_id:user.householdId,
@@ -1341,13 +1387,13 @@ function App(){
     if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes}/>
     if(page==='receitas') content=<Receitas incomes={incomes} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
     if(page==='despesas') content=<Despesas expenses={expenses} onNew={type=>setModal({kind:'transaction',type})} onReceipt={()=>setModal({kind:'receipt'})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
-    if(page==='cartoes') content=<Cartoes cards={cards} onNew={()=>setModal({kind:'card'})}/>
+    if(page==='cartoes') content=<Cartoes cards={cards} expenses={expenses} onNew={()=>setModal({kind:'card'})} onPurchase={()=>setModal({kind:'cardPurchase'})} onPayInvoice={payCardInvoice}/>
     if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes}/>
     if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
     if(page==='config') content=<Config user={user} users={users} onLogout={logout} onRotateJoinCode={rotateJoinCode}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={cards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
