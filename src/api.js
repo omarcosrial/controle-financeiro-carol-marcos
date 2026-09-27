@@ -150,7 +150,7 @@ export const api = {
     }),
 
   listCards: session =>
-    request('credit_cards?select=id,name,brand,last4,credit_limit,closing_day,due_day,color,is_active,created_by,created_at&order=created_at.asc', { session }),
+    request('credit_cards?select=id,name,brand,last4,credit_limit,closing_day,due_day,color,is_active,holder_user_id,created_by,created_at&order=created_at.asc', { session }),
 
   addCard: (session, card) =>
     request('credit_cards', {
