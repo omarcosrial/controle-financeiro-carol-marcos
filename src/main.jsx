@@ -386,10 +386,87 @@ function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice}){
   </>
 }
 
-function Planejamento({expenses,incomes}){
-  const income=incomes.reduce((s,x)=>s+x.amount,0), spent=expenses.reduce((s,x)=>s+x.amount,0), balance=income-spent
-  const cats=Object.entries(expenses.reduce((a,x)=>{a[x.category]=(a[x.category]||0)+Number(x.amount);return a},{})).sort((a,b)=>b[1]-a[1]).slice(0,6)
-  return <><PageHead title="Planejamento" subtitle="Organize metas, orçamento e prioridades do mês."/><div className="stats-grid four"><Stat icon={Target} label="Meta de economia" value={money(500)} tone="green" sub="Meta mensal"/><Stat icon={PiggyBank} label="Disponível para investir" value={money(Math.max(balance,0))} tone="green"/><Stat icon={Wallet} label="Orçamento do mês" value={money(income)}/><Stat icon={BarChart3} label="Saldo projetado" value={money(balance)} tone="purple"/></div><div className="two-col split-wide"><Card title="Orçamento por categoria"><div className="budget-list">{cats.map(([name,value],i)=>{const cap=Math.max(value*1.2,500), pct=Math.min(100,Math.round(value/cap*100));return <div key={name}><div><b>{name}</b><span>{money(value)} / {money(cap)}</span></div><div className="progress"><i style={{width:pct+'%',background:COLORS[i%COLORS.length]}}/></div><em>{pct}%</em></div>})}</div></Card><Card title="Metas do mês"><div className="goal"><b>Reserva de emergência</b><span>{money(500)} de {money(1000)}</span><div className="progress"><i style={{width:'50%'}}/></div></div><div className="goal"><b>Investir</b><span>{money(Math.max(balance,0))} de {money(1500)}</span><div className="progress"><i style={{width:Math.min(100,Math.max(0,balance/1500*100))+'%'}}/></div></div><div className="goal"><b>Manter gastos abaixo da renda</b><span>{spent<=income?'Meta em dia':'Acima da renda'}</span><div className="progress"><i style={{width:Math.min(100,spent/income*100)+'%'}}/></div></div></Card></div></>
+function Planejamento({expenses,incomes,categories,budgets,goals,onBudget,onGoal,onGoalProgress,onGoalDelete}){
+  const today=new Date()
+  const year=today.getFullYear()
+  const month=today.getMonth()+1
+  const monthExpenses=expenses.filter(item=>{
+    const date=item.dueDate || item.date
+    if(!date) return false
+    const d=new Date(date+'T12:00:00')
+    return d.getFullYear()===year && d.getMonth()+1===month && item.statusKey!=='cancelled'
+  })
+  const monthIncomes=incomes.filter(item=>{
+    const date=item.date
+    if(!date) return false
+    const d=new Date(date+'T12:00:00')
+    return d.getFullYear()===year && d.getMonth()+1===month && item.statusKey!=='cancelled'
+  })
+  const income=monthIncomes.reduce((s,x)=>s+Number(x.amount||0),0)
+  const spent=monthExpenses.reduce((s,x)=>s+Number(x.amount||0),0)
+  const plannedTotal=budgets.reduce((s,x)=>s+Number(x.plannedAmount||0),0)
+  const balance=income-spent
+  const activeGoals=goals.filter(goal=>goal.status!=='completed')
+  const targetGoals=activeGoals.reduce((s,g)=>s+Number(g.targetAmount||0),0)
+  const currentGoals=activeGoals.reduce((s,g)=>s+Number(g.currentAmount||0),0)
+  const categorySpent=monthExpenses.reduce((acc,item)=>{
+    acc[item.categoryId]=(acc[item.categoryId]||0)+Number(item.amount||0)
+    return acc
+  },{})
+  const categoryMap=Object.fromEntries(categories.map(cat=>[cat.id,cat]))
+  const budgetRows=budgets.map((budget,index)=>{
+    const spentValue=Number(categorySpent[budget.categoryId]||0)
+    const planned=Number(budget.plannedAmount||0)
+    const pct=planned>0 ? Math.min(999,Math.round(spentValue/planned*100)) : 0
+    return {...budget,name:categoryMap[budget.categoryId]?.name || 'Categoria',spent:spentValue,pct,color:COLORS[index%COLORS.length]}
+  }).sort((a,b)=>b.plannedAmount-a.plannedAmount)
+
+  return <>
+    <PageHead title="Planejamento" subtitle="Defina limites por categoria e acompanhe suas metas." action={<div className="page-actions"><button className="secondary-btn compact" onClick={onGoal}><Target size={18}/> Nova meta</button><button className="primary-btn compact" onClick={onBudget}><Plus size={18}/> Definir orçamento</button></div>}/>
+
+    <div className="stats-grid four">
+      <Stat icon={Wallet} label="Orçamento planejado" value={money(plannedTotal)} tone="blue" sub="Categorias do mês"/>
+      <Stat icon={TrendingDown} label="Gasto realizado" value={money(spent)} tone="red" sub={plannedTotal ? `${Math.round(spent/plannedTotal*100)}% do orçamento` : 'Sem orçamento definido'}/>
+      <Stat icon={PiggyBank} label="Saldo projetado" value={money(balance)} tone={balance>=0?'green':'red'} sub="Receitas - despesas"/>
+      <Stat icon={Target} label="Metas em andamento" value={`${activeGoals.length}`} tone="purple" sub={targetGoals? `${money(currentGoals)} de ${money(targetGoals)}`:'Nenhuma meta ativa'}/>
+    </div>
+
+    <div className="two-col split-wide">
+      <Card title="Orçamento por categoria">
+        {budgetRows.length===0 ? <div className="empty">Nenhum orçamento definido para este mês. Clique em “Definir orçamento”.</div> :
+        <div className="budget-list planning-budget-list">{budgetRows.map(row=><div key={row.id} className={row.pct>100?'budget-over':''}>
+          <div><b>{row.name}</b><span>{money(row.spent)} de {money(row.plannedAmount)}</span></div>
+          <div className="progress"><i style={{width:Math.min(100,row.pct)+'%',background:row.pct>100?'#ef4444':row.color}}/></div>
+          <em>{row.pct}%</em>
+          <button className="budget-edit" onClick={()=>onBudget(row)}><Pencil size={15}/></button>
+        </div>)}</div>}
+      </Card>
+
+      <Card title="Resumo do mês">
+        <div className="planning-summary">
+          <div><span>Receitas previstas</span><b>{money(income)}</b></div>
+          <div><span>Despesas previstas</span><b>{money(spent)}</b></div>
+          <div><span>Orçamento disponível</span><b>{money(Math.max(plannedTotal-spent,0))}</b></div>
+          <div className={balance>=0?'summary-positive':'summary-negative'}><span>Saldo projetado</span><strong>{money(balance)}</strong></div>
+        </div>
+      </Card>
+    </div>
+
+    <Card title="Metas financeiras">
+      {goals.length===0 ? <div className="empty">Nenhuma meta cadastrada. Crie metas como reserva de emergência, viagem ou compra de um bem.</div> :
+      <div className="goals-grid">{goals.map(goal=>{
+        const target=Number(goal.targetAmount||0)
+        const current=Number(goal.currentAmount||0)
+        const pct=target>0?Math.min(100,Math.round(current/target*100)):0
+        return <div className={`goal-card ${goal.status==='completed'?'goal-completed':''}`} key={goal.id}>
+          <div className="goal-card-head"><div><b>{goal.title}</b><small>{goal.dueDate ? `Prazo: ${new Date(goal.dueDate+'T12:00:00').toLocaleDateString('pt-BR')}` : 'Sem prazo definido'}</small></div><span className={`priority priority-${goal.priority}`}>{goal.priority==='high'?'Alta':goal.priority==='low'?'Baixa':'Média'}</span></div>
+          <div className="goal-values"><strong>{money(current)}</strong><span>de {money(target)}</span></div>
+          <div className="progress"><i style={{width:pct+'%'}}/></div>
+          <div className="goal-card-foot"><span>{pct}% concluído</span><div><button onClick={()=>onGoalProgress(goal)} title="Atualizar valor"><Pencil size={16}/></button><button className="danger-action" onClick={()=>onGoalDelete(goal)} title="Excluir meta"><Trash2 size={16}/></button></div></div>
+        </div>
+      })}</div>}
+    </Card>
+  </>
 }
 
 function Relatorios({expenses,incomes}){
