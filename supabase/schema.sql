@@ -467,7 +467,7 @@ returns boolean
 language plpgsql
 security definer
 set search_path = public, extensions
-as $
+as $cm$
 declare
   v_admin public.app_users%rowtype;
   v_target public.app_users%rowtype;
@@ -503,7 +503,7 @@ begin
 
   return true;
 end;
-$;
+$cm$;
 
 grant execute on function public.cm_set_user_active(uuid, boolean) to anon, authenticated;
 
