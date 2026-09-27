@@ -261,3 +261,17 @@ button:disabled{opacity:.65;cursor:not-allowed}
   .card-style-grid{grid-template-columns:1fr}
   .card-color-picker{gap:9px}
 }
+
+
+/* Compras lançadas no cartão */
+.card-purchase-list{display:grid;gap:9px}
+.card-purchase-row{display:grid;grid-template-columns:42px minmax(180px,1fr) auto auto 38px;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #e7eef8}
+.card-purchase-row:last-child{border-bottom:0}
+.card-purchase-row small{display:block;color:#7586ac;margin-top:2px}
+.card-purchase-row>strong{white-space:nowrap}
+@media(max-width:760px){
+  .card-purchase-row{grid-template-columns:40px 1fr auto}
+  .card-purchase-row>strong{grid-column:3/4;grid-row:1/2}
+  .card-purchase-row>.status-badge{grid-column:2/3;width:max-content}
+  .card-purchase-row>.icon-square{grid-column:3/4;grid-row:2/3;justify-self:end}
+}
