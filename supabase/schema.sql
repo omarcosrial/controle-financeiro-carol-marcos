@@ -522,6 +522,7 @@ create table if not exists public.credit_cards (
   due_day smallint check (due_day between 1 and 31),
   color text,
   is_active boolean not null default true,
+  holder_user_id uuid references public.app_users(id) on delete set null,
   created_by uuid references public.app_users(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
