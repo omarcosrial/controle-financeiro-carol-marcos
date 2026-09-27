@@ -13,29 +13,6 @@ import { api } from './api'
 
 const COLORS = ['#1368ff', '#7657ff', '#16b8a5', '#ff9f1c', '#ff5b65', '#91a4bd']
 
-const DEFAULT_EXPENSES = [
-  { id: 1, desc: 'Recarga de Celular', amount: 25, category: 'Moradia', status: 'Pago', kind: 'Fixa', date: '2026-09-03', by: 'Marcos' },
-  { id: 2, desc: 'Academia', amount: 230, category: 'Cuidado pessoal', status: 'Pago', kind: 'Fixa', date: '2026-09-04', by: 'Carol' },
-  { id: 3, desc: 'Consórcio casa 1/240', amount: 962.40, category: 'Aquisição de bens', status: 'Pago', kind: 'Parcelada', date: '2026-09-10', by: 'Marcos' },
-  { id: 4, desc: 'Copasa', amount: 111.90, category: 'Moradia', status: 'Pago', kind: 'Fixa', date: '2026-09-09', by: 'Carol' },
-  { id: 5, desc: 'Aluguel', amount: 901, category: 'Moradia', status: 'Pago', kind: 'Fixa', date: '2026-09-25', by: 'Marcos' },
-  { id: 6, desc: 'Tio Carlos 2/5', amount: 790, category: 'Empréstimo', status: 'Pago', kind: 'Parcelada', date: '2026-09-10', by: 'Marcos' },
-  { id: 7, desc: 'Acordo Unipam Marcos 1/25', amount: 1215, category: 'Negociações', status: 'Pago', kind: 'Parcelada', date: '2026-09-22', by: 'Marcos' },
-  { id: 8, desc: 'Acordo Unipam Carol 1/20', amount: 1275, category: 'Negociações', status: 'Pago', kind: 'Parcelada', date: '2026-09-22', by: 'Carol' },
-  { id: 9, desc: 'Notebook 6/6', amount: 264.77, category: 'Investimento', status: 'Pago', kind: 'Parcelada', date: '2026-09-10', by: 'Marcos' },
-]
-
-const DEFAULT_INCOMES = [
-  { id: 1, desc: 'Gráfica', amount: 600, status: 'Recebida', kind: 'Recorrente', date: '2026-09-03', by: 'Marcos' },
-  { id: 2, desc: 'Carol Rial Consultoria', amount: 9000, status: 'Recebida', kind: 'Recorrente', date: '2026-09-04', by: 'Carol' },
-]
-
-const DEFAULT_CARDS = [
-  { id: 1, name: 'Nubank', limit: 2000, used: 875.40, close: '10/09', due: '20/09' },
-  { id: 2, name: 'Inter', limit: 1500, used: 310.25, close: '18/09', due: '28/09' },
-  { id: 3, name: 'PicPay', limit: 600, used: 185.10, close: '25/09', due: '05/10' },
-]
-
 const money = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const getStore = (key, fallback) => { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback } catch { return fallback } }
 const setStore = (key, value) => localStorage.setItem(key, JSON.stringify(value))
@@ -197,9 +174,30 @@ function Sidebar({page,setPage,user,onLogout}){
   return <aside className="sidebar"><div className="sidebar-brand"><BarChart3/><div><b>Carol <span>&</span> Marcos</b><small>CONTROLE FINANCEIRO</small></div></div><nav>{items.map(([k,l,I])=><button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={20}/><span>{l}</span></button>)}</nav><div className="sidebar-foot"><div className="user-dot">{user.name[0]?.toUpperCase()}</div><div><b>{user.name}</b><small>Usuário</small></div><button onClick={onLogout}><LogOut size={18}/></button></div></aside>
 }
 
-function Topbar({user}){ return <header className="topbar"><div className="top-date"><CalendarDays size={18}/> Setembro de 2026</div><Bell size={20}/><div className="avatar">{user.name[0]?.toUpperCase()}</div><b>{user.name}</b></header> }
+function Topbar({user}){
+  const raw=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(new Date())
+  const label=raw.charAt(0).toUpperCase()+raw.slice(1)
+  return <header className="topbar"><div className="top-date"><CalendarDays size={18}/> {label}</div><Bell size={20}/><div className="avatar">{user.name[0]?.toUpperCase()}</div><b>{user.name}</b></header>
+}
 function PageHead({title,subtitle,action}){ return <div className="page-head"><div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div> }
-function Card({title,children}){ return <section className="card"><div className="card-title"><h3>{title}</h3></div>{children}</section> }
+function Card({title,children,action}){ return <section className="card"><div className="card-title"><h3>{title}</h3>{action}</div>{children}</section> }
+
+function effectiveDate(item){
+  return item?.type==='expense' ? (item.dueDate || item.date || '') : (item?.date || item?.dueDate || '')
+}
+
+function isCurrentMonth(item){
+  const raw=effectiveDate(item)
+  if(!raw) return false
+  const date=new Date(raw+'T12:00:00')
+  const now=new Date()
+  return date.getFullYear()===now.getFullYear() && date.getMonth()===now.getMonth()
+}
+
+function currentMonthLabel(){
+  const raw=new Intl.DateTimeFormat('pt-BR',{month:'long'}).format(new Date())
+  return raw.charAt(0).toUpperCase()+raw.slice(1)
+}
 
 function getDisplayStatus(item){
   if (item.type === 'expense' && item.statusKey === 'pending' && item.dueDate) {
@@ -232,32 +230,100 @@ function TransactionList({rows=[],onEdit,onDelete,onToggle}){
 function List({rows=[]}){ return <TransactionList rows={rows}/> }
 
 function Dashboard({expenses,incomes}){
-  const income = incomes.reduce((s,x)=>s+Number(x.amount),0)
-  const received = incomes.filter(x=>x.statusKey==='received').reduce((s,x)=>s+Number(x.amount),0)
-  const spent = expenses.filter(x=>x.statusKey==='paid').reduce((s,x)=>s+Number(x.amount),0)
-  const pending = expenses.filter(x=>x.statusKey!=='paid' && x.statusKey!=='cancelled').reduce((s,x)=>s+Number(x.amount),0)
-  const balance = received-spent
-  const byCat = Object.entries(expenses.reduce((a,x)=>{a[x.category]=(a[x.category]||0)+Number(x.amount);return a},{})).map(([name,value])=>({name,value}))
-  const monthly = [{m:'Abr',r:7800,d:6900},{m:'Mai',r:8200,d:7100},{m:'Jun',r:9000,d:7600},{m:'Jul',r:9200,d:7900},{m:'Ago',r:8500,d:7400},{m:'Set',r:income,d:spent}]
-  return <><PageHead title="Olá!" subtitle="Acompanhe o resumo financeiro do mês."/><div className="stats-grid"><Stat icon={TrendingUp} label="Renda prevista" value={money(income)} tone="green" sub="Setembro"/><Stat icon={CheckCircle2} label="Renda recebida" value={money(received)} tone="green" sub={`${Math.round((received/Math.max(income,1))*100 || 0)}% da prevista`}/><Stat icon={TrendingDown} label="Despesas pagas" value={money(spent)} tone="red" sub={`${Math.round((spent/Math.max(received,1))*100 || 0)}% do recebido`}/><Stat icon={Clock3} label="A pagar" value={money(pending)} tone="orange" sub={pending ? 'Contas pendentes' : 'Tudo em dia'}/><Stat icon={Wallet} label="Saldo atual" value={money(balance)} tone="blue" sub="Saldo do mês"/><Stat icon={PiggyBank} label="Disponível para investir" value={money(Math.max(balance,0)*0.08)} tone="green" sub="Meta sugerida"/></div><div className="two-col"><Card title="Receitas x Despesas"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly}><XAxis dataKey="m"/><YAxis/><Tooltip formatter={v=>money(v)}/><Bar dataKey="r" fill="#14b87a" radius={[6,6,0,0]}/><Bar dataKey="d" fill="#1368ff" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div></Card><Card title="Despesas por categoria"><div className="pie-wrap"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82} paddingAngle={1}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,6).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div></Card></div><div className="two-col"><Card title="Últimas movimentações"><List rows={[...incomes.map(x=>({...x,type:'in'})),...expenses.map(x=>({...x,type:'out'}))].slice(-6).reverse()}/></Card><Card title="Contas a vencer"><List rows={expenses.slice(0,5).map(x=>({...x,type:'out'}))}/></Card></div></>
+  const monthExpenses=expenses.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
+  const monthIncomes=incomes.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
+  const income=monthIncomes.reduce((s,x)=>s+Number(x.amount||0),0)
+  const received=monthIncomes.filter(x=>x.statusKey==='received').reduce((s,x)=>s+Number(x.amount||0),0)
+  const spent=monthExpenses.filter(x=>x.statusKey==='paid').reduce((s,x)=>s+Number(x.amount||0),0)
+  const pending=monthExpenses.filter(x=>x.statusKey!=='paid').reduce((s,x)=>s+Number(x.amount||0),0)
+  const balance=received-spent
+  const savingsRate=received>0 ? balance/received*100 : 0
+
+  const byCat=Object.entries(monthExpenses.reduce((a,x)=>{
+    a[x.category]=(a[x.category]||0)+Number(x.amount||0)
+    return a
+  },{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value)
+
+  const now=new Date()
+  const monthly=Array.from({length:6},(_,index)=>{
+    const date=new Date(now.getFullYear(),now.getMonth()-(5-index),1,12,0,0)
+    const year=date.getFullYear()
+    const month=date.getMonth()
+    const r=incomes.filter(item=>{
+      const raw=effectiveDate(item); if(!raw || item.statusKey==='cancelled') return false
+      const d=new Date(raw+'T12:00:00')
+      return d.getFullYear()===year && d.getMonth()===month
+    }).reduce((sum,item)=>sum+Number(item.amount||0),0)
+    const d=expenses.filter(item=>{
+      const raw=effectiveDate(item); if(!raw || item.statusKey==='cancelled') return false
+      const dt=new Date(raw+'T12:00:00')
+      return dt.getFullYear()===year && dt.getMonth()===month
+    }).reduce((sum,item)=>sum+Number(item.amount||0),0)
+    return {m:date.toLocaleDateString('pt-BR',{month:'short'}),r,d}
+  })
+
+  const latest=[...incomes.map(x=>({...x,type:'in'})),...expenses.map(x=>({...x,type:'out'}))]
+    .filter(item=>item.statusKey!=='cancelled' && effectiveDate(item))
+    .sort((a,b)=>effectiveDate(b).localeCompare(effectiveDate(a)))
+    .slice(0,6)
+
+  const today=new Date().toISOString().slice(0,10)
+  const upcoming=expenses
+    .filter(item=>item.statusKey!=='paid' && item.statusKey!=='cancelled' && item.dueDate && item.dueDate>=today)
+    .sort((a,b)=>a.dueDate.localeCompare(b.dueDate))
+    .slice(0,5)
+    .map(x=>({...x,type:'out'}))
+
+  return <><PageHead title="Olá!" subtitle="Acompanhe o resumo financeiro do mês."/>
+    <div className="stats-grid">
+      <Stat icon={TrendingUp} label="Renda prevista" value={money(income)} tone="green" sub={currentMonthLabel()}/>
+      <Stat icon={CheckCircle2} label="Renda recebida" value={money(received)} tone="green" sub={`${Math.round((received/Math.max(income,1))*100 || 0)}% da prevista`}/>
+      <Stat icon={TrendingDown} label="Despesas pagas" value={money(spent)} tone="red" sub={`${Math.round((spent/Math.max(received,1))*100 || 0)}% do recebido`}/>
+      <Stat icon={Clock3} label="A pagar" value={money(pending)} tone="orange" sub={pending ? 'Contas pendentes no mês' : 'Tudo em dia'}/>
+      <Stat icon={Wallet} label="Saldo atual" value={money(balance)} tone={balance>=0?'blue':'red'} sub="Recebido - pago"/>
+      <Stat icon={PiggyBank} label="Taxa de economia" value={`${savingsRate.toFixed(1).replace('.',',')}%`} tone={savingsRate>=0?'green':'red'} sub="Saldo ÷ renda recebida"/>
+    </div>
+    <div className="two-col">
+      <Card title="Receitas x Despesas"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly}><XAxis dataKey="m"/><YAxis/><Tooltip formatter={v=>money(v)}/><Bar name="Receitas" dataKey="r" fill="#14b87a" radius={[6,6,0,0]}/><Bar name="Despesas" dataKey="d" fill="#1368ff" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div></Card>
+      <Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82} paddingAngle={1}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,6).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Sem despesas neste mês.</div>}</Card>
+    </div>
+    <div className="two-col">
+      <Card title="Últimas movimentações"><List rows={latest}/></Card>
+      <Card title="Próximas contas a vencer"><List rows={upcoming}/></Card>
+    </div>
+  </>
 }
 
 function Receitas({incomes,onNew,onEdit,onDelete,onToggle}){
-  const total = incomes.reduce((s,x)=>s+Number(x.amount),0)
-  const received = incomes.filter(x=>x.statusKey==='received').reduce((s,x)=>s+Number(x.amount),0)
-  const pending = incomes.filter(x=>x.statusKey!=='received' && x.statusKey!=='cancelled').reduce((s,x)=>s+Number(x.amount),0)
-  const extra = incomes.filter(x=>x.kind==='Extra').reduce((s,x)=>s+Number(x.amount),0)
-  return <><PageHead title="Receitas" subtitle="Controle de rendas e recebimentos." action={<button className="primary-btn compact" onClick={()=>onNew('receita')}><Plus size={18}/> Nova receita</button>}/><div className="stats-grid four"><Stat icon={PiggyBank} label="Renda prevista" value={money(total)} tone="green"/><Stat icon={CheckCircle2} label="Renda recebida" value={money(received)} tone="green"/><Stat icon={Plus} label="Renda extra" value={money(extra)}/><Stat icon={Clock3} label="Pendente" value={money(pending)} tone="orange"/></div><div className="two-col split-wide"><Card title="Receitas recorrentes"><TransactionList rows={incomes.filter(x=>x.kind==='Recorrente')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Receitas extras"><TransactionList rows={incomes.filter(x=>x.kind==='Extra')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card></div></>
+  const rows=incomes.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
+  const total=rows.reduce((s,x)=>s+Number(x.amount||0),0)
+  const received=rows.filter(x=>x.statusKey==='received').reduce((s,x)=>s+Number(x.amount||0),0)
+  const pending=rows.filter(x=>x.statusKey!=='received').reduce((s,x)=>s+Number(x.amount||0),0)
+  const extra=rows.filter(x=>x.kind==='Extra').reduce((s,x)=>s+Number(x.amount||0),0)
+  return <><PageHead title="Receitas" subtitle={`Controle de rendas e recebimentos de ${currentMonthLabel()}.`} action={<button className="primary-btn compact" onClick={()=>onNew('receita')}><Plus size={18}/> Nova receita</button>}/>
+    <div className="stats-grid four"><Stat icon={PiggyBank} label="Renda prevista" value={money(total)} tone="green"/><Stat icon={CheckCircle2} label="Renda recebida" value={money(received)} tone="green"/><Stat icon={Plus} label="Renda extra" value={money(extra)}/><Stat icon={Clock3} label="Pendente" value={money(pending)} tone="orange"/></div>
+    <div className="two-col split-wide"><Card title="Receitas recorrentes"><TransactionList rows={rows.filter(x=>x.kind==='Recorrente')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Receitas extras"><TransactionList rows={rows.filter(x=>x.kind==='Extra')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card></div>
+  </>
 }
+
 function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
-  const paid = expenses.filter(x=>x.statusKey==='paid').reduce((s,x)=>s+Number(x.amount),0)
-  const pendingRows = expenses.filter(x=>x.statusKey!=='paid' && x.statusKey!=='cancelled')
-  const pending = pendingRows.filter(x=>getDisplayStatus(x)!=='Em atraso').reduce((s,x)=>s+Number(x.amount),0)
-  const overdue = pendingRows.filter(x=>getDisplayStatus(x)==='Em atraso').reduce((s,x)=>s+Number(x.amount),0)
-  const total = expenses.filter(x=>x.statusKey!=='cancelled').reduce((s,x)=>s+Number(x.amount),0)
-  const byCat=Object.entries(expenses.filter(x=>x.statusKey!=='cancelled').reduce((a,x)=>{a[x.category]=(a[x.category]||0)+Number(x.amount);return a},{})).map(([name,value])=>({name,value}))
-  return <><PageHead title="Despesas" subtitle="Controle e acompanhamento dos seus gastos." action={<div className="page-actions"><button className="secondary-btn compact" onClick={onReceipt}><ReceiptText size={18}/> Ler cupom</button><button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button></div>}/><div className="stats-grid four"><Stat icon={CreditCard} label="Despesas pagas" value={money(paid)} tone="red"/><Stat icon={Clock3} label="A pagar" value={money(pending)} tone="orange"/><Stat icon={TrendingDown} label="Em atraso" value={money(overdue)} tone="red"/><Stat icon={Target} label="Total previsto" value={money(total)} tone="blue"/></div><div className="two-col split-wide"><Card title="Despesas do mês"><TransactionList rows={expenses} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria"><div className="pie-wrap vertical"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,8).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div></Card></div></>
+  const rows=expenses.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
+  const paid=rows.filter(x=>x.statusKey==='paid').reduce((s,x)=>s+Number(x.amount||0),0)
+  const pendingRows=rows.filter(x=>x.statusKey!=='paid')
+  const pending=pendingRows.filter(x=>getDisplayStatus(x)!=='Em atraso').reduce((s,x)=>s+Number(x.amount||0),0)
+  const overdue=pendingRows.filter(x=>getDisplayStatus(x)==='Em atraso').reduce((s,x)=>s+Number(x.amount||0),0)
+  const total=rows.reduce((s,x)=>s+Number(x.amount||0),0)
+  const byCat=Object.entries(rows.reduce((a,x)=>{
+    a[x.category]=(a[x.category]||0)+Number(x.amount||0)
+    return a
+  },{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value)
+
+  return <><PageHead title="Despesas" subtitle={`Controle e acompanhamento dos gastos de ${currentMonthLabel()}.`} action={<div className="page-actions"><button className="secondary-btn compact" onClick={onReceipt}><ReceiptText size={18}/> Ler cupom</button><button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button></div>}/>
+    <div className="stats-grid four"><Stat icon={CreditCard} label="Despesas pagas" value={money(paid)} tone="red"/><Stat icon={Clock3} label="A pagar" value={money(pending)} tone="orange"/><Stat icon={TrendingDown} label="Em atraso" value={money(overdue)} tone="red"/><Stat icon={Target} label="Total previsto" value={money(total)} tone="blue"/></div>
+    <div className="two-col split-wide"><Card title="Despesas do mês"><TransactionList rows={rows} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,8).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Sem despesas neste mês.</div>}</Card></div>
+  </>
 }
+
 function safeDateWithDay(year,monthIndex,day){
   const lastDay=new Date(year,monthIndex+1,0).getDate()
   const finalDay=Math.min(Math.max(1,Number(day||1)),lastDay)
