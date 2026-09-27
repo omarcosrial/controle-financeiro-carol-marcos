@@ -313,6 +313,7 @@ function buildCardInvoices(cards,expenses){
   })
   return Object.values(groups).map(group=>({
     ...group,
+    openAmount:Math.max(0,Number(group.amount||0)-Number(group.paidAmount||0)),
     paid:group.items.length>0 && group.items.every(item=>item.statusKey==='paid'),
   })).sort((a,b)=>a.dueDate.localeCompare(b.dueDate))
 }
@@ -323,7 +324,7 @@ function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice}){
   const used=cards.reduce((sum,card)=>sum+Number(card.used||0),0)
   const unpaidInvoices=invoices.filter(invoice=>!invoice.paid)
   const byCardCurrent=cards.map(card=>unpaidInvoices.find(invoice=>invoice.cardId===card.id)).filter(Boolean)
-  const currentInvoice=byCardCurrent.reduce((sum,invoice)=>sum+Number(invoice.amount||0),0)
+  const currentInvoice=byCardCurrent.reduce((sum,invoice)=>sum+Number(invoice.openAmount||0),0)
   const nextInvoice=unpaidInvoices[0]
   const installmentGroups=Object.values(
     expenses.filter(item=>item.cardId && item.installmentGroup && Number(item.totalInstallments)>1 && item.statusKey!=='cancelled').reduce((acc,item)=>{
@@ -353,7 +354,7 @@ function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice}){
           <h3>{card.name}</h3>
           <div className="cc-number">•••• {card.last4 || '0000'}</div>
           <div className="cc-cycle">Fecha dia <b>{card.closingDay || '—'}</b> • Vence dia <b>{card.dueDay || '—'}</b></div>
-          <div className="cc-bottom"><span>Disponível<br/><b>{money(Math.max(card.limit-card.used,0))}</b></span><span>Próxima fatura<br/><b>{money(invoice?.amount||0)}</b></span></div>
+          <div className="cc-bottom"><span>Disponível<br/><b>{money(Math.max(card.limit-card.used,0))}</b></span><span>Próxima fatura<br/><b>{money(invoice?.openAmount||0)}</b></span></div>
         </div>
       })}</div> : <div className="empty">Nenhum cartão cadastrado. Clique em “Novo cartão”.</div>}
     </Card>
