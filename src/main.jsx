@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import {
   Home, TrendingUp, TrendingDown, CreditCard, Target, BarChart3, Settings,
   Plus, Bell, LogOut, Wallet, PiggyBank, Clock3, ReceiptText, UserRound,
-  CalendarDays, ChevronRight, X, Save, Eye, EyeOff, CheckCircle2, Pencil, Trash2
+  CalendarDays, ChevronRight, X, Save, Eye, EyeOff, CheckCircle2, Pencil, Trash2, Download
 } from 'lucide-react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell
@@ -470,8 +470,131 @@ function Planejamento({expenses,incomes,categories,budgets,goals,onBudget,onGoal
 }
 
 function Relatorios({expenses,incomes}){
-  const income=incomes.reduce((s,x)=>s+x.amount,0), spent=expenses.reduce((s,x)=>s+x.amount,0), byCat=Object.entries(expenses.reduce((a,x)=>{a[x.category]=(a[x.category]||0)+Number(x.amount);return a},{})).map(([name,value])=>({name,value})), monthly=[{m:'Abr',r:7800,d:6900},{m:'Mai',r:8200,d:7100},{m:'Jun',r:9000,d:7600},{m:'Jul',r:9200,d:7900},{m:'Ago',r:8500,d:7400},{m:'Set',r:income,d:spent}]
-  return <><PageHead title="Relatórios" subtitle="Analise seus resultados e acompanhe sua evolução financeira."/><div className="stats-grid four"><Stat icon={TrendingUp} label="Receitas do mês" value={money(income)} tone="green"/><Stat icon={TrendingDown} label="Despesas do mês" value={money(spent)} tone="red"/><Stat icon={Wallet} label="Saldo líquido" value={money(income-spent)}/><Stat icon={PiggyBank} label="Investido no mês" value={money(Math.max(income-spent,0)*.08)} tone="purple"/></div><div className="two-col"><Card title="Receitas x Despesas"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly}><XAxis dataKey="m"/><YAxis/><Tooltip formatter={v=>money(v)}/><Bar dataKey="r" fill="#14b87a"/><Bar dataKey="d" fill="#1368ff"/></BarChart></ResponsiveContainer></div></Card><Card title="Despesas por categoria"><div className="pie-wrap"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,6).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div></Card></div></>
+  const [period,setPeriod]=useState('6m')
+  const [person,setPerson]=useState('todos')
+
+  const today=new Date()
+  const startOfMonth=new Date(today.getFullYear(),today.getMonth(),1,12,0,0)
+  const startOfYear=new Date(today.getFullYear(),0,1,12,0,0)
+  const startOf6Months=new Date(today.getFullYear(),today.getMonth()-5,1,12,0,0)
+  const periodStart=period==='mes'?startOfMonth:period==='ano'?startOfYear:startOf6Months
+
+  const filterByPeriod=item=>{
+    const raw=item.date || item.dueDate
+    if(!raw) return false
+    const date=new Date(raw+'T12:00:00')
+    if(date<periodStart || date>today) return false
+    if(item.statusKey==='cancelled') return false
+    if(person!=='todos' && item.by!==person) return false
+    return true
+  }
+
+  const filteredIncomes=incomes.filter(filterByPeriod)
+  const filteredExpenses=expenses.filter(filterByPeriod)
+  const income=filteredIncomes.reduce((sum,item)=>sum+Number(item.amount||0),0)
+  const spent=filteredExpenses.reduce((sum,item)=>sum+Number(item.amount||0),0)
+  const received=filteredIncomes.filter(item=>item.statusKey==='received').reduce((sum,item)=>sum+Number(item.amount||0),0)
+  const paid=filteredExpenses.filter(item=>item.statusKey==='paid').reduce((sum,item)=>sum+Number(item.amount||0),0)
+  const pending=filteredExpenses.filter(item=>item.statusKey!=='paid').reduce((sum,item)=>sum+Number(item.amount||0),0)
+  const balance=income-spent
+  const savingsRate=income>0 ? balance/income*100 : 0
+
+  const byCat=Object.entries(filteredExpenses.reduce((acc,item)=>{
+    acc[item.category]=(acc[item.category]||0)+Number(item.amount||0)
+    return acc
+  },{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value)
+
+  const monthMap={}
+  ;[...filteredIncomes.map(item=>({...item,_kind:'income'})),...filteredExpenses.map(item=>({...item,_kind:'expense'}))].forEach(item=>{
+    const raw=item.date || item.dueDate
+    const date=new Date(raw+'T12:00:00')
+    const key=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`
+    if(!monthMap[key]) monthMap[key]={key,m:date.toLocaleDateString('pt-BR',{month:'short',year:'2-digit'}),r:0,d:0}
+    if(item._kind==='income') monthMap[key].r+=Number(item.amount||0)
+    else monthMap[key].d+=Number(item.amount||0)
+  })
+  const monthly=Object.values(monthMap).sort((a,b)=>a.key.localeCompare(b.key))
+
+  const byPerson=Object.entries([...filteredIncomes,...filteredExpenses].reduce((acc,item)=>{
+    const name=item.by || 'Não identificado'
+    acc[name]=(acc[name]||0)+1
+    return acc
+  },{})).sort((a,b)=>b[1]-a[1])
+
+  const byKind=Object.entries(filteredExpenses.reduce((acc,item)=>{
+    acc[item.kind || 'Outro']=(acc[item.kind || 'Outro']||0)+Number(item.amount||0)
+    return acc
+  },{})).sort((a,b)=>b[1]-a[1])
+
+  const people=[...new Set([...incomes,...expenses].map(item=>item.by).filter(Boolean))]
+
+  const exportCsv=()=>{
+    const rows=[
+      ['Tipo','Data','Descrição','Categoria','Situação','Valor','Usuário'],
+      ...filteredIncomes.map(item=>['Receita',item.date||'',item.desc,item.category||'',item.status||'',Number(item.amount||0).toFixed(2).replace('.',','),item.by||'']),
+      ...filteredExpenses.map(item=>['Despesa',item.date||item.dueDate||'',item.desc,item.category||'',getDisplayStatus(item),Number(item.amount||0).toFixed(2).replace('.',','),item.by||'']),
+    ]
+    const escape=value=>`"${String(value??'').replace(/"/g,'""')}"`
+    const csv='\ufeff'+rows.map(row=>row.map(escape).join(';')).join('\n')
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'})
+    const url=URL.createObjectURL(blob)
+    const link=document.createElement('a')
+    link.href=url
+    link.download=`relatorio-financeiro-${new Date().toISOString().slice(0,10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return <>
+    <PageHead title="Relatórios" subtitle="Analise seus resultados e acompanhe sua evolução financeira." action={<button className="primary-btn compact" onClick={exportCsv}><Download size={18}/> Exportar CSV</button>}/>
+
+    <div className="report-filters">
+      <div><label>Período</label><select value={period} onChange={event=>setPeriod(event.target.value)}><option value="mes">Este mês</option><option value="6m">Últimos 6 meses</option><option value="ano">Este ano</option></select></div>
+      <div><label>Usuário</label><select value={person} onChange={event=>setPerson(event.target.value)}><option value="todos">Carol e Marcos</option>{people.map(name=><option key={name} value={name}>{name}</option>)}</select></div>
+    </div>
+
+    <div className="stats-grid four">
+      <Stat icon={TrendingUp} label="Receitas previstas" value={money(income)} tone="green" sub={`${money(received)} recebidos`}/>
+      <Stat icon={TrendingDown} label="Despesas previstas" value={money(spent)} tone="red" sub={`${money(paid)} pagos`}/>
+      <Stat icon={Wallet} label="Saldo projetado" value={money(balance)} tone={balance>=0?'green':'red'} sub={pending ? `${money(pending)} ainda a pagar`:'Sem pendências'}/>
+      <Stat icon={PiggyBank} label="Taxa de economia" value={`${savingsRate.toFixed(1).replace('.',',')}%`} tone={savingsRate>=0?'purple':'red'} sub="Saldo ÷ receitas"/>
+    </div>
+
+    <div className="two-col">
+      <Card title="Receitas x Despesas">
+        {monthly.length ? <div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly}><XAxis dataKey="m"/><YAxis/><Tooltip formatter={value=>money(value)}/><Bar name="Receitas" dataKey="r" fill="#14b87a" radius={[6,6,0,0]}/><Bar name="Despesas" dataKey="d" fill="#1368ff" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div> : <div className="empty">Sem movimentações no período selecionado.</div>}
+      </Card>
+
+      <Card title="Despesas por categoria">
+        {byCat.length ? <div className="pie-wrap"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,index)=><Cell key={index} fill={COLORS[index%COLORS.length]}/>)}</Pie><Tooltip formatter={value=>money(value)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,7).map((item,index)=><div key={item.name}><span style={{background:COLORS[index%COLORS.length]}}></span><b>{item.name}</b><em>{money(item.value)}</em></div>)}</div></div> : <div className="empty">Sem despesas no período.</div>}
+      </Card>
+    </div>
+
+    <div className="two-col">
+      <Card title="Onde estamos gastando mais">
+        {byCat.length ? <div className="ranking-list">{byCat.slice(0,8).map((item,index)=><div key={item.name}><span className="rank-number">{index+1}</span><div className="grow"><b>{item.name}</b><div className="progress"><i style={{width:`${spent>0?Math.min(100,item.value/spent*100):0}%`,background:COLORS[index%COLORS.length]}}/></div></div><strong>{money(item.value)}</strong><em>{spent>0?`${(item.value/spent*100).toFixed(1).replace('.',',')}%`:'0%'}</em></div>)}</div> : <div className="empty">Sem dados para ranking.</div>}
+      </Card>
+
+      <Card title="Perfil das despesas">
+        {byKind.length ? <div className="report-breakdown">{byKind.map(([name,value],index)=><div key={name}><span style={{background:COLORS[index%COLORS.length]}}></span><b>{name}</b><strong>{money(value)}</strong><em>{spent>0?`${(value/spent*100).toFixed(1).replace('.',',')}%`:'0%'}</em></div>)}</div> : <div className="empty">Sem despesas no período.</div>}
+      </Card>
+    </div>
+
+    <div className="two-col">
+      <Card title="Movimentações por usuário">
+        {byPerson.length ? <div className="report-breakdown">{byPerson.map(([name,count],index)=><div key={name}><span style={{background:COLORS[index%COLORS.length]}}></span><b>{name}</b><strong>{count}</strong><em>lançamento(s)</em></div>)}</div> : <div className="empty">Sem movimentações no período.</div>}
+      </Card>
+      <Card title="Leitura rápida">
+        <div className="report-insights">
+          <div className={balance>=0?'insight-good':'insight-bad'}><b>{balance>=0?'Saldo positivo':'Saldo negativo'}</b><span>{balance>=0?`As receitas superam as despesas em ${money(balance)}.`:`As despesas superam as receitas em ${money(Math.abs(balance))}.`}</span></div>
+          {byCat[0]&&<div><b>Maior categoria</b><span>{byCat[0].name} representa {spent>0?(byCat[0].value/spent*100).toFixed(1).replace('.',','):'0'}% das despesas.</span></div>}
+          <div><b>Pendências</b><span>{pending>0?`Ainda existem ${money(pending)} em despesas não pagas no período.`:'Não há despesas pendentes no período selecionado.'}</span></div>
+        </div>
+      </Card>
+    </div>
+  </>
 }
 
 function Config({user,users,onLogout,onRotateJoinCode}){
