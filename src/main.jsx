@@ -14,6 +14,12 @@ import { api } from './api'
 const COLORS = ['#1368ff', '#7657ff', '#16b8a5', '#ff9f1c', '#ff5b65', '#91a4bd']
 
 const money = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const localISODate = (date=new Date()) => {
+  const y=date.getFullYear()
+  const m=String(date.getMonth()+1).padStart(2,'0')
+  const d=String(date.getDate()).padStart(2,'0')
+  return `${y}-${m}-${d}`
+}
 const getStore = (key, fallback) => { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback } catch { return fallback } }
 const setStore = (key, value) => localStorage.setItem(key, JSON.stringify(value))
 
@@ -201,7 +207,7 @@ function currentMonthLabel(){
 
 function getDisplayStatus(item){
   if (item.type === 'expense' && item.statusKey === 'pending' && item.dueDate) {
-    const today = new Date().toISOString().slice(0,10)
+    const today = localISODate()
     if (item.dueDate < today) return 'Em atraso'
   }
   return item.status || 'Pendente'
@@ -267,7 +273,7 @@ function Dashboard({expenses,incomes}){
     .sort((a,b)=>effectiveDate(b).localeCompare(effectiveDate(a)))
     .slice(0,6)
 
-  const today=new Date().toISOString().slice(0,10)
+  const today=localISODate()
   const upcoming=expenses
     .filter(item=>item.statusKey!=='paid' && item.statusKey!=='cancelled' && item.dueDate && item.dueDate>=today)
     .sort((a,b)=>a.dueDate.localeCompare(b.dueDate))
@@ -335,7 +341,7 @@ function safeDateWithDay(year,monthIndex,day){
 }
 
 function cardFirstDueDate(purchaseDate,closingDay,dueDay){
-  const base=new Date((purchaseDate||new Date().toISOString().slice(0,10))+'T12:00:00')
+  const base=new Date((purchaseDate||localISODate())+'T12:00:00')
   const closeDay=Number(closingDay||1)
   const payDay=Number(dueDay||1)
   let closeMonth=base.getMonth()
@@ -479,7 +485,7 @@ function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice}){
             <div className="invoice-date"><span>{new Date(invoice.dueDate+'T12:00:00').toLocaleDateString('pt-BR',{month:'short'})}</span><b>{new Date(invoice.dueDate+'T12:00:00').getDate()}</b></div>
             <div className="grow"><b>{invoice.cardName}</b><small>{invoice.items.length} lançamento(s) • vence {new Date(invoice.dueDate+'T12:00:00').toLocaleDateString('pt-BR')}</small></div>
             <strong>{money(invoice.amount)}</strong>
-            <span className={`status-badge ${invoice.paid?'status-pago':(invoice.dueDate<new Date().toISOString().slice(0,10)?'status-em-atraso':'status-pendente')}`}>{invoice.paid?'Paga':(invoice.dueDate<new Date().toISOString().slice(0,10)?'Em atraso':'Aberta')}</span>
+            <span className={`status-badge ${invoice.paid?'status-pago':(invoice.dueDate<localISODate()?'status-em-atraso':'status-pendente')}`}>{invoice.paid?'Paga':(invoice.dueDate<localISODate()?'Em atraso':'Aberta')}</span>
             {!invoice.paid && <button className="secondary-btn compact invoice-pay" onClick={()=>onPayInvoice(invoice)}>Marcar paga</button>}
           </div>)}
         </div>
@@ -653,7 +659,7 @@ function Relatorios({expenses,incomes}){
     const url=URL.createObjectURL(blob)
     const link=document.createElement('a')
     link.href=url
-    link.download=`relatorio-financeiro-${new Date().toISOString().slice(0,10)}.csv`
+    link.download=`relatorio-financeiro-${localISODate()}.csv`
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -1037,7 +1043,7 @@ function parseReceiptOcr(text,categories){
       break
     }
   }
-  if(!date) date=new Date().toISOString().slice(0,10)
+  if(!date) date=localISODate()
 
   let total=0
   const totalKeys=/TOTAL A PAGAR|VALOR TOTAL|TOTAL R\$|TOTAL\s*:/i
@@ -1133,7 +1139,7 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
   const [saving,setSaving]=useState(false)
   const [error,setError]=useState('')
   const [store,setStore]=useState('')
-  const [date,setDate]=useState(new Date().toISOString().slice(0,10))
+  const [date,setDate]=useState(localISODate())
   const [total,setTotal]=useState('')
   const [items,setItems]=useState([])
   const [analyzed,setAnalyzed]=useState(false)
@@ -1182,7 +1188,7 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
 
         if(aiItems.length){
           setStore(String(receipt.store_name||'').trim())
-          setDate(receipt.purchase_date || new Date().toISOString().slice(0,10))
+          setDate(receipt.purchase_date || localISODate())
           setTotal(Number(receipt.total_amount||0) ? String(Number(receipt.total_amount).toFixed(2)).replace('.',',') : '')
           setItems(aiItems)
           setAnalyzed(true)
@@ -1273,7 +1279,7 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
     try{
       await onImport({
         storeName:store.trim() || 'Supermercado',
-        receiptDate:date || new Date().toISOString().slice(0,10),
+        receiptDate:date || localISODate(),
         totalAmount:receiptTotal || itemsTotal,
         items:cleanItems,
       })
@@ -1369,9 +1375,9 @@ function NewTransactionModal({type,user,categories,cards,item,onClose,onSave}){
         kind:KIND_DB[form.kind] || 'other',
         status:form.status,
         type:type==='receita'?'income':'expense',
-        transaction_date:item?.date || new Date().toISOString().slice(0,10),
+        transaction_date:item?.date || localISODate(),
         due_date:form.dueDate || null,
-        paid_date:['paid','received'].includes(form.status) ? new Date().toISOString().slice(0,10) : null,
+        paid_date:['paid','received'].includes(form.status) ? localISODate() : null,
         paid_by:['paid','received'].includes(form.status) ? user.id : null,
       }, {
         id:item?.id || null,
@@ -1480,7 +1486,7 @@ function NewCardPurchaseModal({user,cards,categories,onClose,onSave}){
     cardId:cards[0]?.id || '',
     description:'',
     amount:'',
-    purchaseDate:new Date().toISOString().slice(0,10),
+    purchaseDate:localISODate(),
     categoryId:expenseCategories.find(cat=>cat.name==='Supermercado')?.id || expenseCategories[0]?.id || '',
     installments:1,
   })
@@ -1909,7 +1915,7 @@ function App(){
 
     await api.updateTransaction(user.token,item.id,{
       status:next,
-      paid_date:['paid','received'].includes(next) ? new Date().toISOString().slice(0,10) : null,
+      paid_date:['paid','received'].includes(next) ? localISODate() : null,
       paid_by:['paid','received'].includes(next) ? user.id : null,
     })
     await loadData(user)
@@ -1966,7 +1972,7 @@ function App(){
   const payCardInvoice = async invoice => {
     await api.payCardInvoice(user.token,invoice.cardId,invoice.dueDate,{
       status:'paid',
-      paid_date:new Date().toISOString().slice(0,10),
+      paid_date:localISODate(),
       paid_by:user.id,
     })
     await loadData(user)
@@ -2116,7 +2122,7 @@ function App(){
     const url=URL.createObjectURL(blob)
     const link=document.createElement('a')
     link.href=url
-    link.download='backup-controle-financeiro-'+new Date().toISOString().slice(0,10)+'.json'
+    link.download='backup-controle-financeiro-'+localISODate()+'.json'
     document.body.appendChild(link)
     link.click()
     link.remove()
