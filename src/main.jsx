@@ -1171,6 +1171,128 @@ function NewCardPurchaseModal({user,cards,categories,onClose,onSave}){
 }
 
 
+function BudgetModal({categories,budget,onClose,onSave}){
+  const expenseCategories=categories.filter(cat=>['expense','both'].includes(cat.type))
+  const [categoryId,setCategoryId]=useState(budget?.categoryId || expenseCategories[0]?.id || '')
+  const [amount,setAmount]=useState(budget?.plannedAmount ? String(budget.plannedAmount) : '')
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+
+  const save=async()=>{
+    const value=Number(String(amount).replace(',','.'))
+    if(!categoryId) return setError('Selecione uma categoria.')
+    if(!(value>0)) return setError('Informe um valor maior que zero.')
+    setBusy(true)
+    setError('')
+    try{
+      await onSave({id:budget?.id || null,categoryId,plannedAmount:value})
+      onClose()
+    }catch(err){
+      setError(err?.message || 'Não foi possível salvar o orçamento.')
+    }finally{
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="modal">
+      <div className="modal-head"><h2>{budget?'Editar orçamento':'Definir orçamento'}</h2><button onClick={onClose}><X/></button></div>
+      <label>Categoria</label>
+      <select value={categoryId} onChange={event=>setCategoryId(event.target.value)} disabled={Boolean(budget)}>
+        {expenseCategories.map(cat=><option key={cat.id} value={cat.id}>{cat.name}</option>)}
+      </select>
+      <label>Limite planejado para o mês</label>
+      <input inputMode="decimal" value={amount} onChange={event=>setAmount(event.target.value.replace(',','.'))} placeholder="0,00"/>
+      {error&&<div className="auth-msg">{error}</div>}
+      <button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Salvar orçamento'}</button>
+    </div>
+  </div>
+}
+
+function GoalModal({user,onClose,onSave}){
+  const [form,setForm]=useState({title:'',target:'',current:'0',dueDate:'',priority:'medium'})
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+
+  const save=async()=>{
+    const target=Number(String(form.target).replace(',','.'))
+    const current=Number(String(form.current).replace(',','.')) || 0
+    if(!form.title.trim()) return setError('Informe o nome da meta.')
+    if(!(target>0)) return setError('Informe o valor da meta.')
+    if(current<0 || current>target) return setError('O valor atual deve estar entre zero e o valor da meta.')
+    setBusy(true)
+    setError('')
+    try{
+      await onSave({
+        title:form.title.trim(),
+        targetAmount:target,
+        currentAmount:current,
+        dueDate:form.dueDate || null,
+        priority:form.priority,
+        createdBy:user.id,
+      })
+      onClose()
+    }catch(err){
+      setError(err?.message || 'Não foi possível criar a meta.')
+    }finally{
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="modal">
+      <div className="modal-head"><h2>Nova meta financeira</h2><button onClick={onClose}><X/></button></div>
+      <label>Nome da meta</label>
+      <input value={form.title} onChange={event=>setForm({...form,title:event.target.value})} placeholder="Ex.: Reserva de emergência"/>
+      <div className="form-row">
+        <div><label>Valor da meta</label><input inputMode="decimal" value={form.target} onChange={event=>setForm({...form,target:event.target.value.replace(',','.')})} placeholder="0,00"/></div>
+        <div><label>Já guardado</label><input inputMode="decimal" value={form.current} onChange={event=>setForm({...form,current:event.target.value.replace(',','.')})} placeholder="0,00"/></div>
+      </div>
+      <div className="form-row">
+        <div><label>Prazo <small className="label-help">(opcional)</small></label><input type="date" value={form.dueDate} onChange={event=>setForm({...form,dueDate:event.target.value})}/></div>
+        <div><label>Prioridade</label><select value={form.priority} onChange={event=>setForm({...form,priority:event.target.value})}><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></div>
+      </div>
+      <div className="modal-user">Criada por <b>{user.name}</b></div>
+      {error&&<div className="auth-msg">{error}</div>}
+      <button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Criar meta'}</button>
+    </div>
+  </div>
+}
+
+function GoalProgressModal({goal,onClose,onSave}){
+  const [current,setCurrent]=useState(String(goal.currentAmount||0))
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+  const target=Number(goal.targetAmount||0)
+
+  const save=async()=>{
+    const value=Number(String(current).replace(',','.'))
+    if(value<0 || value>target) return setError(`Informe um valor entre ${money(0)} e ${money(target)}.`)
+    setBusy(true)
+    setError('')
+    try{
+      await onSave(goal,value)
+      onClose()
+    }catch(err){
+      setError(err?.message || 'Não foi possível atualizar a meta.')
+    }finally{
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="modal">
+      <div className="modal-head"><h2>Atualizar meta</h2><button onClick={onClose}><X/></button></div>
+      <div className="goal-edit-title"><b>{goal.title}</b><span>Objetivo: {money(target)}</span></div>
+      <label>Valor acumulado até agora</label>
+      <input inputMode="decimal" value={current} onChange={event=>setCurrent(event.target.value.replace(',','.'))}/>
+      {error&&<div className="auth-msg">{error}</div>}
+      <button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Atualizar progresso'}</button>
+    </div>
+  </div>
+}
+
+
 function BottomNav({page,setPage,onNew}){ return <nav className="bottom-nav"><button className={page==='dashboard'?'active':''} onClick={()=>setPage('dashboard')}><Home/><span>Início</span></button><button className={page==='receitas'?'active':''} onClick={()=>setPage('receitas')}><BarChart3/><span>Receitas</span></button><button className="fab" onClick={()=>onNew('despesa')}><Plus/></button><button className={page==='despesas'?'active':''} onClick={()=>setPage('despesas')}><TrendingDown/><span>Despesas</span></button><button className={['cartoes','planejamento','relatorios','config'].includes(page)?'active':''} onClick={()=>setPage('config')}><Settings/><span>Mais</span></button></nav> }
 
 function App(){
