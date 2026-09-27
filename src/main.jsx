@@ -991,6 +991,106 @@ function NewCardModal({user,onClose,onSave}){
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><h2>Novo cartão</h2><button onClick={onClose}><X/></button></div><label>Nome do cartão</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ex.: Nubank"/><label>Últimos 4 dígitos <small className="label-help">(opcional)</small></label><input inputMode="numeric" maxLength={4} value={form.last4} onChange={e=>setForm({...form,last4:e.target.value.replace(/\D/g,'')})} placeholder="1234"/><label>Limite</label><input inputMode="decimal" value={form.limit} onChange={e=>setForm({...form,limit:e.target.value.replace(',','.')})} placeholder="0,00"/><div className="form-row"><div><label>Dia do fechamento</label><input inputMode="numeric" maxLength={2} value={form.closingDay} onChange={e=>setForm({...form,closingDay:e.target.value.replace(/\D/g,'')})}/></div><div><label>Dia do vencimento</label><input inputMode="numeric" maxLength={2} value={form.dueDay} onChange={e=>setForm({...form,dueDay:e.target.value.replace(/\D/g,'')})}/></div></div>{error&&<div className="auth-msg">{error}</div>}<button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Cadastrar cartão'}</button></div></div>
 }
 
+function NewCardPurchaseModal({user,cards,categories,onClose,onSave}){
+  const expenseCategories=categories.filter(cat=>['expense','both'].includes(cat.type))
+  const [form,setForm]=useState({
+    cardId:cards[0]?.id || '',
+    description:'',
+    amount:'',
+    purchaseDate:new Date().toISOString().slice(0,10),
+    categoryId:expenseCategories.find(cat=>cat.name==='Supermercado')?.id || expenseCategories[0]?.id || '',
+    installments:1,
+  })
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+
+  const selectedCard=cards.find(card=>card.id===form.cardId)
+  const installmentCount=Math.max(1,Number(form.installments||1))
+  const total=Number(String(form.amount||'').replace(',','.')) || 0
+  const firstDue=selectedCard ? cardFirstDueDate(form.purchaseDate,selectedCard.closingDay,selectedCard.dueDay) : ''
+  const cents=Math.round(total*100)
+  const baseCents=installmentCount ? Math.floor(cents/installmentCount) : 0
+  const remainder=installmentCount ? cents-baseCents*installmentCount : 0
+  const preview=Array.from({length:Math.min(installmentCount,12)},(_,index)=>({
+    n:index+1,
+    amount:(baseCents+(index===installmentCount-1?remainder:0))/100,
+    due:firstDue ? (()=> {
+      const [y,m,d]=firstDue.split('-').map(Number)
+      const date=new Date(y,m-1+index,1,12,0,0)
+      return safeDateWithDay(date.getFullYear(),date.getMonth(),d)
+    })() : '',
+  }))
+
+  const save=async()=>{
+    setError('')
+    if(!selectedCard) return setError('Selecione um cartão.')
+    if(!form.description.trim()) return setError('Informe a descrição da compra.')
+    if(total<=0) return setError('Informe o valor da compra.')
+    if(installmentCount<1 || installmentCount>48) return setError('Use entre 1 e 48 parcelas.')
+    const available=Math.max(Number(selectedCard.limit||0)-Number(selectedCard.used||0),0)
+    if(total>available+0.001) return setError(`A compra ultrapassa o limite disponível de ${money(available)}.`)
+
+    setBusy(true)
+    try{
+      await onSave({
+        card:selectedCard,
+        description:form.description.trim(),
+        total,
+        purchaseDate:form.purchaseDate,
+        categoryId:form.categoryId || null,
+        installments:installmentCount,
+        firstDue,
+      })
+      onClose()
+    }catch(err){
+      setError(err?.message || 'Não foi possível lançar a compra.')
+    }finally{
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="modal card-purchase-modal">
+      <div className="modal-head"><h2>Nova compra no cartão</h2><button onClick={onClose}><X/></button></div>
+
+      <label>Cartão</label>
+      <select value={form.cardId} onChange={event=>setForm({...form,cardId:event.target.value})}>
+        {cards.map(card=><option key={card.id} value={card.id}>{card.name} • disponível {money(Math.max(card.limit-card.used,0))}</option>)}
+      </select>
+
+      <label>Descrição da compra</label>
+      <input value={form.description} onChange={event=>setForm({...form,description:event.target.value})} placeholder="Ex.: Mercado, farmácia, tênis"/>
+
+      <div className="form-row">
+        <div><label>Valor total</label><input inputMode="decimal" value={form.amount} onChange={event=>setForm({...form,amount:event.target.value.replace(',','.')})} placeholder="0,00"/></div>
+        <div><label>Data da compra</label><input type="date" value={form.purchaseDate} onChange={event=>setForm({...form,purchaseDate:event.target.value})}/></div>
+      </div>
+
+      <div className="form-row">
+        <div><label>Categoria</label><select value={form.categoryId} onChange={event=>setForm({...form,categoryId:event.target.value})}><option value="">Sem categoria</option>{expenseCategories.map(cat=><option key={cat.id} value={cat.id}>{cat.name}</option>)}</select></div>
+        <div><label>Parcelas</label><input type="number" min="1" max="48" value={form.installments} onChange={event=>setForm({...form,installments:event.target.value})}/></div>
+      </div>
+
+      {selectedCard&&<div className="card-purchase-info">
+        <span>Fecha dia <b>{selectedCard.closingDay || '—'}</b></span>
+        <span>Vence dia <b>{selectedCard.dueDay || '—'}</b></span>
+        <span>1ª fatura <b>{firstDue ? new Date(firstDue+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</b></span>
+      </div>}
+
+      {total>0&&<div className="purchase-preview">
+        <div className="purchase-preview-head"><b>Como ficará na fatura</b><span>{installmentCount}x • {money(total)}</span></div>
+        {preview.map(item=><div key={item.n}><span>Parcela {item.n}/{installmentCount}</span><span>{item.due ? new Date(item.due+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</span><b>{money(item.amount)}</b></div>)}
+        {installmentCount>12&&<small>+ {installmentCount-12} parcela(s) futuras</small>}
+      </div>}
+
+      <div className="modal-user">Lançado por <b>{user.name}</b></div>
+      {error&&<div className="auth-msg">{error}</div>}
+      <button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Lançar compra'}</button>
+    </div>
+  </div>
+}
+
+
 function BottomNav({page,setPage,onNew}){ return <nav className="bottom-nav"><button className={page==='dashboard'?'active':''} onClick={()=>setPage('dashboard')}><Home/><span>Início</span></button><button className={page==='receitas'?'active':''} onClick={()=>setPage('receitas')}><BarChart3/><span>Receitas</span></button><button className="fab" onClick={()=>onNew('despesa')}><Plus/></button><button className={page==='despesas'?'active':''} onClick={()=>setPage('despesas')}><TrendingDown/><span>Despesas</span></button><button className={['cartoes','planejamento','relatorios','config'].includes(page)?'active':''} onClick={()=>setPage('config')}><Settings/><span>Mais</span></button></nav> }
 
 function App(){
