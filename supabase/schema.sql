@@ -627,10 +627,7 @@ on public.goals
 for all
 to anon, authenticated
 using (household_id = public.cm_current_household_id())
-with check (
-  household_id = public.cm_current_household_id()
-  and created_by = public.cm_current_user_id()
-);
+with check (household_id = public.cm_current_household_id());
 
 grant select, insert, update, delete on public.goals to anon, authenticated;
 
