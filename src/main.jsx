@@ -970,6 +970,8 @@ function NewCardModal({user,onClose,onSave}){
     setError('')
     if (!form.name.trim()) return setError('Informe o nome do cartão.')
     if (!Number(form.limit)) return setError('Informe o limite do cartão.')
+    if (!Number(form.closingDay) || Number(form.closingDay)<1 || Number(form.closingDay)>31) return setError('Informe um dia de fechamento entre 1 e 31.')
+    if (!Number(form.dueDay) || Number(form.dueDay)<1 || Number(form.dueDay)>31) return setError('Informe um dia de vencimento entre 1 e 31.')
     setBusy(true)
     try {
       await onSave({
