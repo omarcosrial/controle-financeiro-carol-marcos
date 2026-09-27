@@ -394,8 +394,10 @@ function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice}){
     <Card title="Meus cartões">
       {cards.length ? <div className="credit-cards">{cards.map((card,i)=>{
         const invoice=unpaidInvoices.find(item=>item.cardId===card.id)
-        return <div className={`credit-card cc${(i%3)+1}`} key={card.id}>
-          <small>Carol & Marcos</small>
+        const cardColor=card.color || CARD_COLOR_OPTIONS[i%CARD_COLOR_OPTIONS.length].value
+        const textColor=cardTextColor(cardColor)
+        return <div className="credit-card" key={card.id} style={{'--card-color':cardColor,color:textColor}}>
+          <div className="cc-top"><small>Carol & Marcos</small><CardBrandMark brand={card.brand}/></div>
           <h3>{card.name}</h3>
           <div className="cc-number">•••• {card.last4 || '0000'}</div>
           <div className="cc-cycle">Fecha dia <b>{card.closingDay || '—'}</b> • Vence dia <b>{card.dueDay || '—'}</b></div>
@@ -1385,6 +1387,18 @@ function NewCardModal({user,card,onClose,onSave}){
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal">
     <div className="modal-head"><h2>{card?'Editar cartão':'Novo cartão'}</h2><button onClick={onClose}><X/></button></div>
     <label>Nome do cartão</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ex.: Nubank"/>
+    <div className="card-style-grid">
+      <div><label>Logo / bandeira</label><select value={form.brand} onChange={e=>setForm({...form,brand:e.target.value})}>{CARD_BRANDS.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+      <div><label>Cor do cartão</label><div className="card-color-picker">
+        {CARD_COLOR_OPTIONS.map(option=><button key={option.value} type="button" className={form.color.toLowerCase()===option.value.toLowerCase()?'color-dot selected':'color-dot'} style={{background:option.value}} onClick={()=>setForm({...form,color:option.value})} title={option.name}/>)}
+        <label className="custom-color" title="Escolher outra cor"><input type="color" value={form.color} onChange={e=>setForm({...form,color:e.target.value})}/><span>+</span></label>
+      </div></div>
+    </div>
+    <div className="card-mini-preview" style={{'--card-color':form.color,color:cardTextColor(form.color)}}>
+      <div className="cc-top"><small>Carol & Marcos</small><CardBrandMark brand={form.brand}/></div>
+      <b>{form.name || 'Seu cartão'}</b>
+      <span>•••• {form.last4 || '0000'}</span>
+    </div>
     <label>Últimos 4 dígitos <small className="label-help">(opcional)</small></label><input inputMode="numeric" maxLength={4} value={form.last4} onChange={e=>setForm({...form,last4:e.target.value.replace(/\D/g,'')})} placeholder="1234"/>
     <label>Limite</label><input inputMode="decimal" value={form.limit} onChange={e=>setForm({...form,limit:e.target.value.replace(',','.')})} placeholder="0,00"/>
     <div className="form-row"><div><label>Dia do fechamento</label><input inputMode="numeric" maxLength={2} value={form.closingDay} onChange={e=>setForm({...form,closingDay:e.target.value.replace(/\D/g,'')})}/></div><div><label>Dia do vencimento</label><input inputMode="numeric" maxLength={2} value={form.dueDay} onChange={e=>setForm({...form,dueDay:e.target.value.replace(/\D/g,'')})}/></div></div>
