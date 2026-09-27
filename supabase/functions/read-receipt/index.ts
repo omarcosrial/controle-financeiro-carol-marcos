@@ -161,22 +161,52 @@ REGRAS OBRIGATÓRIAS:
       },
     }
 
-    const gemini = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify(body),
-      },
-    )
+    const models = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-2.5-flash-lite',
+    ]
 
-    const payload = await gemini.json().catch(() => ({}))
-    if (!gemini.ok) {
-      const message = payload?.error?.message || 'Falha ao interpretar o cupom com IA.'
-      return json({ error: message }, gemini.status >= 400 && gemini.status < 600 ? gemini.status : 502)
+    let payload: any = null
+    let selectedModel = ''
+    let lastError = 'Falha ao interpretar o cupom com IA.'
+
+    for (const model of models) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const gemini = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey,
+            },
+            body: JSON.stringify(body),
+          },
+        )
+
+        const responsePayload = await gemini.json().catch(() => ({}))
+
+        if (gemini.ok) {
+          payload = responsePayload
+          selectedModel = model
+          break
+        }
+
+        lastError = responsePayload?.error?.message || `Erro ${gemini.status} no modelo ${model}.`
+
+        const retryable = gemini.status === 429 || gemini.status === 500 || gemini.status === 503
+        if (retryable && attempt === 0) {
+          await new Promise(resolve => setTimeout(resolve, 900))
+          continue
+        }
+        break
+      }
+      if (payload) break
+    }
+
+    if (!payload) {
+      return json({ error: lastError }, 503)
     }
 
     const text = payload?.candidates?.[0]?.content?.parts
@@ -203,7 +233,7 @@ REGRAS OBRIGATÓRIAS:
 
     return json({
       provider: 'gemini',
-      model: 'gemini-3.8-flash',
+      model: selectedModel,
       receipt,
     })
   } catch (error) {
