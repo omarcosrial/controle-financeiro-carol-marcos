@@ -716,7 +716,7 @@ function Relatorios({expenses,incomes}){
   </>
 }
 
-function Config({user,users,categories,cards,onLogout,onRotateJoinCode,onChangePin,onNewCategory,onEditCategory,onEditCard,onDeactivateCard,onToggleUser,onBackup}){
+function Config({user,users,categories,cards,onLogout,onRotateJoinCode,onChangePin,onNewCategory,onEditCategory,onEditCard,onToggleCard,onToggleUser,onBackup}){
   const [familyCode,setFamilyCode] = useState(()=>getStore('cm_join_code',''))
   const [rotating,setRotating] = useState(false)
   const rotate = async () => {
@@ -774,8 +774,9 @@ function Config({user,users,categories,cards,onLogout,onRotateJoinCode,onChangeP
         <div className="settings-grid-list">{cards.map(card=><div className="settings-line" key={card.id}>
           <div className="mini-icon expense"><CreditCard size={18}/></div>
           <div className="grow"><b>{card.name} {card.last4 ? '•••• ' + card.last4 : ''}</b><small>Limite {money(card.limit)} • fecha dia {card.closingDay || '—'} • vence dia {card.dueDay || '—'}</small></div>
+          <span className={card.isActive ? 'pill' : 'pill pill-off'}>{card.isActive ? 'Ativo' : 'Inativo'}</span>
           <button className="icon-square" onClick={()=>onEditCard(card)} title="Editar cartão"><Pencil size={16}/></button>
-          <button className="icon-square danger-action" onClick={()=>onDeactivateCard(card)} title="Desativar cartão"><Trash2 size={16}/></button>
+          <button className="secondary-btn compact" onClick={()=>onToggleCard(card)}>{card.isActive ? 'Desativar' : 'Ativar'}</button>
         </div>)}</div>}
       </Card>
     </div>
@@ -1789,6 +1790,7 @@ function App(){
         name:card.name,
         brand:card.brand || 'outro',
         color:card.color || '#175CD3',
+        isActive:card.is_active !== false,
         last4:card.last4,
         limit:Number(card.credit_limit || 0),
         used:Number(usageByCard[card.id] || 0),
@@ -2097,9 +2099,10 @@ function App(){
     await loadData(user)
   }
 
-  const deactivateCard = async card => {
-    if(!window.confirm('Desativar o cartão '+card.name+'? As compras já lançadas serão mantidas.')) return
-    await api.updateCard(user.token,card.id,{is_active:false})
+  const toggleCardActive = async card => {
+    const action=card.isActive ? 'desativar' : 'ativar'
+    if(!window.confirm('Deseja '+action+' o cartão '+card.name+'? As compras já lançadas serão mantidas.')) return
+    await api.updateCard(user.token,card.id,{is_active:!card.isActive})
     await loadData(user)
   }
 
@@ -2131,6 +2134,7 @@ function App(){
   }
 
   const rotateJoinCode = () => api.rotateJoinCode(user.token)
+  const activeCards=cards.filter(card=>card.isActive!==false)
 
   let content
   if(loading) {
@@ -2141,13 +2145,13 @@ function App(){
     if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes}/>
     if(page==='receitas') content=<Receitas incomes={incomes} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
     if(page==='despesas') content=<Despesas expenses={expenses} onNew={type=>setModal({kind:'transaction',type})} onReceipt={()=>setModal({kind:'receipt'})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
-    if(page==='cartoes') content=<Cartoes cards={cards} expenses={expenses} onNew={()=>setModal({kind:'card'})} onPurchase={()=>setModal({kind:'cardPurchase'})} onPayInvoice={payCardInvoice}/>
+    if(page==='cartoes') content=<Cartoes cards={activeCards} expenses={expenses} onNew={()=>setModal({kind:'card'})} onPurchase={()=>setModal({kind:'cardPurchase'})} onPayInvoice={payCardInvoice}/>
     if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes} categories={categories} budgets={budgets} goals={goals} onBudget={budget=>setModal({kind:'budget',budget:budget?.id?budget:null})} onGoal={()=>setModal({kind:'goal'})} onGoalProgress={goal=>setModal({kind:'goalProgress',goal})} onGoalDelete={deleteGoal}/>
     if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
-    if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onDeactivateCard={deactivateCard} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
+    if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onToggleCard={toggleCardActive} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={cards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
