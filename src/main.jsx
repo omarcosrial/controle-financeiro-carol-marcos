@@ -1297,8 +1297,14 @@ function NewTransactionModal({type,user,categories,cards,item,onClose,onSave}){
   </div></div>
 }
 
-function NewCardModal({user,onClose,onSave}){
-  const [form,setForm] = useState({name:'',last4:'',limit:'',closingDay:'',dueDay:''})
+function NewCardModal({user,card,onClose,onSave}){
+  const [form,setForm] = useState({
+    name:card?.name || '',
+    last4:card?.last4 || '',
+    limit:card?.limit ? String(card.limit) : '',
+    closingDay:card?.closingDay ? String(card.closingDay) : '',
+    dueDay:card?.dueDay ? String(card.dueDay) : '',
+  })
   const [busy,setBusy] = useState(false)
   const [error,setError] = useState('')
 
@@ -1311,23 +1317,33 @@ function NewCardModal({user,onClose,onSave}){
     setBusy(true)
     try {
       await onSave({
+        id:card?.id || null,
         name: form.name.trim(),
         last4: form.last4.replace(/\D/g,'').slice(-4) || null,
         credit_limit: Number(form.limit),
-        closing_day: form.closingDay ? Number(form.closingDay) : null,
-        due_day: form.dueDay ? Number(form.dueDay) : null,
+        closing_day: Number(form.closingDay),
+        due_day: Number(form.dueDay),
         created_by: user.id,
       })
       onClose()
     } catch (err) {
-      setError(err?.message || 'Não foi possível cadastrar o cartão.')
+      setError(err?.message || 'Não foi possível salvar o cartão.')
     } finally {
       setBusy(false)
     }
   }
 
-  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><h2>Novo cartão</h2><button onClick={onClose}><X/></button></div><label>Nome do cartão</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ex.: Nubank"/><label>Últimos 4 dígitos <small className="label-help">(opcional)</small></label><input inputMode="numeric" maxLength={4} value={form.last4} onChange={e=>setForm({...form,last4:e.target.value.replace(/\D/g,'')})} placeholder="1234"/><label>Limite</label><input inputMode="decimal" value={form.limit} onChange={e=>setForm({...form,limit:e.target.value.replace(',','.')})} placeholder="0,00"/><div className="form-row"><div><label>Dia do fechamento</label><input inputMode="numeric" maxLength={2} value={form.closingDay} onChange={e=>setForm({...form,closingDay:e.target.value.replace(/\D/g,'')})}/></div><div><label>Dia do vencimento</label><input inputMode="numeric" maxLength={2} value={form.dueDay} onChange={e=>setForm({...form,dueDay:e.target.value.replace(/\D/g,'')})}/></div></div>{error&&<div className="auth-msg">{error}</div>}<button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Cadastrar cartão'}</button></div></div>
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal">
+    <div className="modal-head"><h2>{card?'Editar cartão':'Novo cartão'}</h2><button onClick={onClose}><X/></button></div>
+    <label>Nome do cartão</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ex.: Nubank"/>
+    <label>Últimos 4 dígitos <small className="label-help">(opcional)</small></label><input inputMode="numeric" maxLength={4} value={form.last4} onChange={e=>setForm({...form,last4:e.target.value.replace(/\D/g,'')})} placeholder="1234"/>
+    <label>Limite</label><input inputMode="decimal" value={form.limit} onChange={e=>setForm({...form,limit:e.target.value.replace(',','.')})} placeholder="0,00"/>
+    <div className="form-row"><div><label>Dia do fechamento</label><input inputMode="numeric" maxLength={2} value={form.closingDay} onChange={e=>setForm({...form,closingDay:e.target.value.replace(/\D/g,'')})}/></div><div><label>Dia do vencimento</label><input inputMode="numeric" maxLength={2} value={form.dueDay} onChange={e=>setForm({...form,dueDay:e.target.value.replace(/\D/g,'')})}/></div></div>
+    {error&&<div className="auth-msg">{error}</div>}
+    <button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':card?'Salvar alterações':'Cadastrar cartão'}</button>
+  </div></div>
 }
+
 
 function NewCardPurchaseModal({user,cards,categories,onClose,onSave}){
   const expenseCategories=categories.filter(cat=>['expense','both'].includes(cat.type))
