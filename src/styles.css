@@ -157,3 +157,32 @@ button:disabled{opacity:.65;cursor:not-allowed}
   .planning-budget-list .budget-edit{justify-self:end}
   .goals-grid{grid-template-columns:1fr}
 }
+
+
+/* Relatórios */
+.report-filters{display:flex;gap:12px;align-items:end;margin-bottom:16px;flex-wrap:wrap}
+.report-filters>div{display:grid;gap:6px}
+.report-filters label{font-size:12px;font-weight:800;color:#5f719b}
+.report-filters select{min-width:190px;padding:10px 12px;border:1px solid #d2def0;border-radius:10px;background:#fff;color:#10245f}
+.ranking-list{display:grid;gap:10px}
+.ranking-list>div{display:grid;grid-template-columns:34px 1fr auto 52px;align-items:center;gap:10px}
+.rank-number{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#e8f1ff;color:#0e61e6;font-weight:800;font-size:12px}
+.ranking-list .grow{display:grid;gap:6px}.ranking-list em{font-style:normal;text-align:right;color:#6f80a5;font-size:12px}
+.report-breakdown{display:grid;gap:9px}
+.report-breakdown>div{display:grid;grid-template-columns:11px 1fr auto auto;gap:9px;align-items:center;padding:10px 0;border-bottom:1px solid #e7eef8}
+.report-breakdown>div:last-child{border-bottom:0}
+.report-breakdown>div>span{width:10px;height:10px;border-radius:50%}
+.report-breakdown em{font-style:normal;color:#7283a8;font-size:12px}
+.report-insights{display:grid;gap:10px}
+.report-insights>div{padding:12px 14px;border-radius:12px;background:#f7faff;display:grid;gap:4px}
+.report-insights>div span{color:#697aa3;font-size:13px}
+.report-insights .insight-good{background:#effaf5}.report-insights .insight-good b{color:#0b9961}
+.report-insights .insight-bad{background:#fff0f2}.report-insights .insight-bad b{color:#d7384c}
+@media(max-width:760px){
+  .report-filters{display:grid;grid-template-columns:1fr 1fr}
+  .report-filters select{min-width:0;width:100%}
+  .ranking-list>div{grid-template-columns:30px 1fr auto}
+  .ranking-list>div>em{grid-column:3/4}
+  .ranking-list>div>strong{grid-column:3/4;grid-row:1/2}
+}
+@media(max-width:430px){.report-filters{grid-template-columns:1fr}}
