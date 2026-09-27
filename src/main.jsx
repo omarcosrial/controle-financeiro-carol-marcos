@@ -1784,10 +1784,15 @@ function App(){
   }
 
   const saveCard = async card => {
-    await api.addCard(user.token, {
-      ...card,
-      household_id:user.householdId,
-    })
+    const {id,...payload}=card
+    if(id){
+      await api.updateCard(user.token,id,payload)
+    }else{
+      await api.addCard(user.token, {
+        ...payload,
+        household_id:user.householdId,
+      })
+    }
     await loadData(user)
   }
 
@@ -1922,6 +1927,67 @@ function App(){
     await loadData(user)
   }
 
+  const saveCategory = async data => {
+    if(data.id){
+      await api.updateCategory(user.token,data.id,{
+        name:data.name,
+        type:data.type,
+      })
+    }else{
+      await api.addCategory(user.token,{
+        household_id:user.householdId,
+        name:data.name,
+        type:data.type,
+        is_active:true,
+      })
+    }
+    await loadData(user)
+  }
+
+  const changePin = async (currentPin,newPin) => {
+    await api.changePin(user.token,currentPin,newPin)
+  }
+
+  const toggleUserActive = async target => {
+    const action=target.is_active?'desativar':'ativar'
+    if(!window.confirm('Deseja '+action+' o usuário '+target.name+'?')) return
+    await api.setUserActive(user.token,target.id,!target.is_active)
+    await loadData(user)
+  }
+
+  const deactivateCard = async card => {
+    if(!window.confirm('Desativar o cartão '+card.name+'? As compras já lançadas serão mantidas.')) return
+    await api.updateCard(user.token,card.id,{is_active:false})
+    await loadData(user)
+  }
+
+  const downloadBackup = () => {
+    const backup={
+      app:'Carol & Marcos — Controle Financeiro',
+      exportedAt:new Date().toISOString(),
+      exportedBy:user.name,
+      version:1,
+      data:{
+        incomes,
+        expenses,
+        cards,
+        categories,
+        budgets,
+        goals,
+        users:users.map(item=>({id:item.id,name:item.name,role:item.role,is_active:item.is_active})),
+      },
+    }
+    const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json;charset=utf-8'})
+    const url=URL.createObjectURL(blob)
+    const link=document.createElement('a')
+    link.href=url
+    link.download='backup-controle-financeiro-'+new Date().toISOString().slice(0,10)+'.json'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const rotateJoinCode = () => api.rotateJoinCode(user.token)
 
   let content
@@ -1936,10 +2002,10 @@ function App(){
     if(page==='cartoes') content=<Cartoes cards={cards} expenses={expenses} onNew={()=>setModal({kind:'card'})} onPurchase={()=>setModal({kind:'cardPurchase'})} onPayInvoice={payCardInvoice}/>
     if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes} categories={categories} budgets={budgets} goals={goals} onBudget={budget=>setModal({kind:'budget',budget:budget?.id?budget:null})} onGoal={()=>setModal({kind:'goal'})} onGoalProgress={goal=>setModal({kind:'goalProgress',goal})} onGoalDelete={deleteGoal}/>
     if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
-    if(page==='config') content=<Config user={user} users={users} onLogout={logout} onRotateJoinCode={rotateJoinCode}/>
+    if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onDeactivateCard={deactivateCard} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={cards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={cards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
