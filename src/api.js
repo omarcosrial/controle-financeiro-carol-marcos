@@ -145,6 +145,53 @@ export const api = {
   listGoals: session =>
     request('goals?select=id,title,target_amount,current_amount,due_date,status,priority,created_by,created_at&order=created_at.desc', { session }),
 
+  addGoal: (session, goal) =>
+    request('goals', {
+      method: 'POST',
+      body: goal,
+      session,
+      prefer: 'return=representation,missing=default',
+    }),
+
+  updateGoal: (session, id, patch) =>
+    request(`goals?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: patch,
+      session,
+      prefer: 'return=representation',
+    }),
+
+  deleteGoal: (session, id) =>
+    request(`goals?id=eq.${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      session,
+    }),
+
+  listBudgets: (session, year, month) =>
+    request(`monthly_budgets?select=id,year,month,category_id,planned_amount,created_at,updated_at&year=eq.${encodeURIComponent(year)}&month=eq.${encodeURIComponent(month)}&order=created_at.asc`, { session }),
+
+  addBudget: (session, budget) =>
+    request('monthly_budgets', {
+      method: 'POST',
+      body: budget,
+      session,
+      prefer: 'return=representation,missing=default',
+    }),
+
+  updateBudget: (session, id, patch) =>
+    request(`monthly_budgets?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: patch,
+      session,
+      prefer: 'return=representation',
+    }),
+
+  deleteBudget: (session, id) =>
+    request(`monthly_budgets?id=eq.${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      session,
+    }),
+
   addReceiptImport: (session, receipt) =>
     request('receipt_imports', {
       method: 'POST',
