@@ -584,6 +584,7 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
     try{
       // 1) Leitura principal com IA visual (mais precisa para cupons térmicos)
       setProgress(8)
+      let aiFailureMessage=''
       try{
         const prepared=await preprocessReceiptImage(file,'gray')
         setProgress(22)
@@ -620,6 +621,7 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
         }
         throw new Error('A IA não encontrou itens.')
       }catch(aiError){
+        aiFailureMessage=String(aiError?.message || aiError || 'Falha desconhecida na leitura por IA.')
         // 2) Fallback gratuito/local com OCR se a Edge Function ainda não estiver ativa ou a IA falhar
         setProgress(35)
       }
@@ -670,7 +672,7 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
       setItems(parsed.items)
       setAnalyzed(true)
       setProgress(100)
-      setError('A leitura por IA não estava disponível e o sistema usou o OCR local. Confira todos os itens antes de confirmar.')
+      setError(`A leitura por IA falhou: ${aiFailureMessage || 'motivo não informado'}. O sistema usou o OCR local. Confira todos os itens antes de confirmar.`)
     }catch(err){
       setError('Não consegui ler esse cupom com segurança. Tente uma foto mais próxima, reta, bem iluminada e com o texto ocupando quase toda a imagem.')
     }finally{
