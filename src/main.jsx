@@ -597,7 +597,7 @@ function Relatorios({expenses,incomes}){
   </>
 }
 
-function Config({user,users,onLogout,onRotateJoinCode}){
+function Config({user,users,categories,cards,onLogout,onRotateJoinCode,onChangePin,onNewCategory,onEditCategory,onEditCard,onDeactivateCard,onToggleUser,onBackup}){
   const [familyCode,setFamilyCode] = useState(()=>getStore('cm_join_code',''))
   const [rotating,setRotating] = useState(false)
   const rotate = async () => {
@@ -616,7 +616,142 @@ function Config({user,users,onLogout,onRotateJoinCode}){
     }
   }
 
-  return <><PageHead title="Configurações" subtitle="Personalize o sistema, usuários e preferências."/><div className="two-col split-wide"><Card title="Usuários do sistema"><div className="list">{users.map(u=><div className="list-row" key={u.id}><div className="avatar">{u.name[0].toUpperCase()}</div><div className="grow"><b>{u.name}</b><small>{u.role === 'admin' ? 'Administrador' : 'Usuário da família'}</small></div><span className="pill">{u.is_active ? 'Ativo' : 'Inativo'}</span></div>)}</div></Card><Card title="Perfil da família"><div className="settings-text"><b>Carol & Marcos — Controle Financeiro</b><p>Controle financeiro compartilhado da família.</p><p>Usuário atual: <strong>{user.name}</strong></p>{user.role==='admin' && <div className="family-code"><span>Código para cadastrar o segundo usuário</span><strong>{familyCode || 'Gere um novo código'}</strong><button className="secondary-btn" onClick={rotate} disabled={rotating}>{rotating?'Gerando...':'Gerar novo código'}</button></div>}</div></Card></div><div className="two-col split-wide"><Card title="Segurança e acesso"><div className="settings-text"><p>✓ PIN armazenado com hash no banco</p><p>✓ Bloqueio temporário após tentativas incorretas</p><p>✓ Dados separados por família com políticas RLS</p><p className="warning">Evite usar o sistema em computadores públicos. A sessão fica salva neste navegador para facilitar o acesso.</p></div></Card><Card title="Backup e exportação"><div className="settings-text"><p>Os lançamentos agora ficam sincronizados no Supabase entre celular e computador.</p><button className="secondary-btn" onClick={onLogout}><LogOut size={18}/> Sair da conta</button></div></Card></div></>
+  return <>
+    <PageHead title="Configurações" subtitle="Gerencie usuários, categorias, cartões, segurança e backup." action={<button className="primary-btn compact" onClick={onBackup}><Download size={18}/> Backup JSON</button>}/>
+
+    <div className="two-col split-wide">
+      <Card title="Usuários do sistema">
+        <div className="list">{users.map(u=><div className="list-row settings-user-row" key={u.id}>
+          <div className="avatar">{u.name[0].toUpperCase()}</div>
+          <div className="grow"><b>{u.name}</b><small>{u.role === 'admin' ? 'Administrador' : 'Usuário da família'}</small></div>
+          <span className={u.is_active ? 'pill' : 'pill pill-off'}>{u.is_active ? 'Ativo' : 'Inativo'}</span>
+          {user.role==='admin' && u.id!==user.id && <button className="secondary-btn compact" onClick={()=>onToggleUser(u)}>{u.is_active?'Desativar':'Ativar'}</button>}
+        </div>)}</div>
+      </Card>
+
+      <Card title="Perfil da família">
+        <div className="settings-text">
+          <b>Carol & Marcos — Controle Financeiro</b>
+          <p>Dados compartilhados e sincronizados entre os usuários da família.</p>
+          <p>Usuário atual: <strong>{user.name}</strong></p>
+          {user.role==='admin' && <div className="family-code"><span>Código para cadastrar outro usuário</span><strong>{familyCode || 'Gere um novo código'}</strong><button className="secondary-btn" onClick={rotate} disabled={rotating}>{rotating?'Gerando...':'Gerar novo código'}</button></div>}
+        </div>
+      </Card>
+    </div>
+
+    <div className="two-col split-wide">
+      <Card title="Categorias" action={<button className="secondary-btn compact" onClick={onNewCategory}><Plus size={16}/> Nova categoria</button>}>
+        <div className="settings-grid-list">
+          {categories.map(cat=><div className="settings-line" key={cat.id}>
+            <div className="category-dot" style={{background:cat.color || '#1368ff'}}/>
+            <div className="grow"><b>{cat.name}</b><small>{cat.type==='income'?'Receita':cat.type==='expense'?'Despesa':'Receita e despesa'}</small></div>
+            <button className="icon-square" onClick={()=>onEditCategory(cat)} title="Editar categoria"><Pencil size={16}/></button>
+          </div>)}
+        </div>
+      </Card>
+
+      <Card title="Cartões cadastrados">
+        {cards.length===0 ? <div className="empty">Nenhum cartão cadastrado.</div> :
+        <div className="settings-grid-list">{cards.map(card=><div className="settings-line" key={card.id}>
+          <div className="mini-icon expense"><CreditCard size={18}/></div>
+          <div className="grow"><b>{card.name} {card.last4 ? '•••• ' + card.last4 : ''}</b><small>Limite {money(card.limit)} • fecha dia {card.closingDay || '—'} • vence dia {card.dueDay || '—'}</small></div>
+          <button className="icon-square" onClick={()=>onEditCard(card)} title="Editar cartão"><Pencil size={16}/></button>
+          <button className="icon-square danger-action" onClick={()=>onDeactivateCard(card)} title="Desativar cartão"><Trash2 size={16}/></button>
+        </div>)}</div>}
+      </Card>
+    </div>
+
+    <div className="two-col split-wide">
+      <Card title="Segurança e acesso">
+        <div className="settings-text">
+          <p>✓ PIN protegido com hash no banco</p>
+          <p>✓ Bloqueio temporário após várias tentativas incorretas</p>
+          <p>✓ Sessões e dados separados por família</p>
+          <button className="secondary-btn" onClick={onChangePin}><Settings size={18}/> Alterar meu PIN</button>
+          <p className="warning">Em computadores públicos, use “Sair da conta” ao terminar.</p>
+        </div>
+      </Card>
+
+      <Card title="Dados e backup">
+        <div className="settings-text">
+          <p>O backup JSON inclui lançamentos, cartões, categorias, orçamentos e metas. Ele não contém PINs nem chaves secretas.</p>
+          <div className="settings-actions">
+            <button className="secondary-btn" onClick={onBackup}><Download size={18}/> Baixar backup</button>
+            <button className="secondary-btn" onClick={onLogout}><LogOut size={18}/> Sair da conta</button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  </>
+}
+
+function CategoryModal({category,onClose,onSave}){
+  const [form,setForm]=useState({name:category?.name || '',type:category?.type || 'expense'})
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+
+  const save=async()=>{
+    if(!form.name.trim()) return setError('Informe o nome da categoria.')
+    setBusy(true)
+    setError('')
+    try{
+      await onSave({id:category?.id || null,name:form.name.trim(),type:form.type})
+      onClose()
+    }catch(err){
+      setError(err?.message || 'Não foi possível salvar a categoria.')
+    }finally{
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="modal">
+      <div className="modal-head"><h2>{category?'Editar categoria':'Nova categoria'}</h2><button onClick={onClose}><X/></button></div>
+      <label>Nome</label>
+      <input value={form.name} onChange={event=>setForm({...form,name:event.target.value})} placeholder="Ex.: Bebê, Pets, Presentes"/>
+      <label>Usar em</label>
+      <select value={form.type} onChange={event=>setForm({...form,type:event.target.value})}><option value="expense">Despesas</option><option value="income">Receitas</option><option value="both">Receitas e despesas</option></select>
+      {error&&<div className="auth-msg">{error}</div>}
+      <button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Salvando...':'Salvar categoria'}</button>
+    </div>
+  </div>
+}
+
+function ChangePinModal({onClose,onSave}){
+  const [currentPin,setCurrentPin]=useState('')
+  const [newPin,setNewPin]=useState('')
+  const [confirmPin,setConfirmPin]=useState('')
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+
+  const save=async()=>{
+    if(!/^\d{4}$/.test(currentPin)) return setError('Informe seu PIN atual de 4 dígitos.')
+    if(!/^\d{4}$/.test(newPin)) return setError('O novo PIN deve ter exatamente 4 dígitos.')
+    if(newPin!==confirmPin) return setError('A confirmação do novo PIN não confere.')
+    if(newPin===currentPin) return setError('Escolha um PIN diferente do atual.')
+    setBusy(true)
+    setError('')
+    try{
+      await onSave(currentPin,newPin)
+      onClose()
+      alert('PIN alterado com sucesso.')
+    }catch(err){
+      setError(err?.message || 'Não foi possível alterar o PIN.')
+    }finally{
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="modal">
+      <div className="modal-head"><h2>Alterar PIN</h2><button onClick={onClose}><X/></button></div>
+      <label>PIN atual</label><input type="password" inputMode="numeric" maxLength={4} value={currentPin} onChange={event=>setCurrentPin(event.target.value.replace(/\D/g,''))}/>
+      <label>Novo PIN</label><input type="password" inputMode="numeric" maxLength={4} value={newPin} onChange={event=>setNewPin(event.target.value.replace(/\D/g,''))}/>
+      <label>Confirmar novo PIN</label><input type="password" inputMode="numeric" maxLength={4} value={confirmPin} onChange={event=>setConfirmPin(event.target.value.replace(/\D/g,''))}/>
+      {error&&<div className="auth-msg">{error}</div>}
+      <button className="primary-btn" disabled={busy} onClick={save}><Save size={18}/> {busy?'Alterando...':'Alterar PIN'}</button>
+    </div>
+  </div>
 }
 
 
