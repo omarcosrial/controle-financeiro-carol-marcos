@@ -1290,7 +1290,7 @@ function ReceiptImportModal({user,categories,onClose,onImport}){
       <div className="modal-head"><h2>🧾 Ler cupom fiscal</h2><button onClick={onClose} disabled={processing||saving}><X/></button></div>
 
       {!analyzed && <>
-        <div className="receipt-intro"><b>Fotografe ou envie o cupom</b><span>O reconhecimento acontece no próprio navegador. Antes de salvar, você poderá conferir e corrigir os itens.</span></div>
+        <div className="receipt-intro"><b>Fotografe ou envie o cupom</b><span>A imagem será analisada pela IA para identificar os itens. Antes de salvar, você poderá conferir e corrigir tudo. Se a IA não estiver disponível, o sistema usa OCR local como alternativa.</span></div>
         <label className="receipt-upload">
           <input type="file" accept="image/*" capture="environment" onChange={event=>setFile(event.target.files?.[0]||null)}/>
           <ReceiptText size={28}/>
@@ -1896,6 +1896,7 @@ function App(){
   })
 
   const deleteTransaction = async item => {
+    if(!window.confirm(`Excluir “${item.desc}”? Esta ação não pode ser desfeita.`)) return
     await api.deleteTransaction(user.token,item.id)
     await loadData(user)
   }
@@ -1987,7 +1988,9 @@ function App(){
       household_id:user.householdId,
       receipt_id:receiptRow.id,
       description:item.description,
-      quantity:1,
+      quantity:Number(item.quantity || 1),
+      unit:item.unit || null,
+      unit_price:Number(item.unitPrice || item.amount || 0),
       total_price:Number(item.amount),
       category_id:item.categoryId || null,
     }))
@@ -2054,6 +2057,7 @@ function App(){
   }
 
   const deleteGoal = async goal => {
+    if(!window.confirm(`Excluir a meta “${goal.title}”? Esta ação não pode ser desfeita.`)) return
     await api.deleteGoal(user.token,goal.id)
     await loadData(user)
   }
