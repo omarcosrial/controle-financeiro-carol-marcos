@@ -1303,6 +1303,8 @@ function App(){
   const [cards,setCards]=useState([])
   const [categories,setCategories]=useState([])
   const [users,setUsers]=useState([])
+  const [budgets,setBudgets]=useState([])
+  const [goals,setGoals]=useState([])
   const [modal,setModal]=useState(null)
   const [loading,setLoading]=useState(!!user)
   const [loadError,setLoadError]=useState('')
@@ -1317,12 +1319,17 @@ function App(){
     setLoading(true)
     setLoadError('')
     try {
-      const [validated, categoryRows, transactionRows, userRows, cardRows] = await Promise.all([
+      const currentDate=new Date()
+      const currentYear=currentDate.getFullYear()
+      const currentMonth=currentDate.getMonth()+1
+      const [validated, categoryRows, transactionRows, userRows, cardRows, budgetRows, goalRows] = await Promise.all([
         api.validate(currentUser.token),
         api.listCategories(currentUser.token),
         api.listTransactions(currentUser.token),
         api.listUsers(currentUser.token),
         api.listCards(currentUser.token),
+        api.listBudgets(currentUser.token,currentYear,currentMonth),
+        api.listGoals(currentUser.token),
       ])
 
       const profile = Array.isArray(validated) ? validated[0] : validated
@@ -1343,6 +1350,23 @@ function App(){
       const uiTransactions = (transactionRows || []).map(tx=>txToUi(tx, categoryMap, userMap))
       setCategories(categoryRows || [])
       setUsers(userRows || [])
+      setBudgets((budgetRows || []).map(row=>({
+        id:row.id,
+        year:Number(row.year),
+        month:Number(row.month),
+        categoryId:row.category_id,
+        plannedAmount:Number(row.planned_amount||0),
+      })))
+      setGoals((goalRows || []).map(row=>({
+        id:row.id,
+        title:row.title,
+        targetAmount:Number(row.target_amount||0),
+        currentAmount:Number(row.current_amount||0),
+        dueDate:row.due_date,
+        status:row.status,
+        priority:row.priority,
+        createdBy:row.created_by,
+      })))
       setIncomes(uiTransactions.filter(tx=>tx.type==='income'))
       setExpenses(uiTransactions.filter(tx=>tx.type==='expense'))
 
@@ -1393,6 +1417,8 @@ function App(){
     setCards([])
     setCategories([])
     setUsers([])
+    setBudgets([])
+    setGoals([])
   }
 
   if(!user) return <Auth onLogin={login}/>
@@ -1578,6 +1604,50 @@ function App(){
     await loadData(user)
   }
 
+  const saveBudget = async data => {
+    const now=new Date()
+    const existing=data.id ? budgets.find(item=>item.id===data.id) : budgets.find(item=>item.categoryId===data.categoryId)
+    if(existing){
+      await api.updateBudget(user.token,existing.id,{planned_amount:data.plannedAmount})
+    }else{
+      await api.addBudget(user.token,{
+        household_id:user.householdId,
+        year:now.getFullYear(),
+        month:now.getMonth()+1,
+        category_id:data.categoryId,
+        planned_amount:data.plannedAmount,
+      })
+    }
+    await loadData(user)
+  }
+
+  const saveGoal = async data => {
+    await api.addGoal(user.token,{
+      household_id:user.householdId,
+      title:data.title,
+      target_amount:data.targetAmount,
+      current_amount:data.currentAmount,
+      due_date:data.dueDate,
+      priority:data.priority,
+      status:data.currentAmount>=data.targetAmount?'completed':'active',
+      created_by:data.createdBy,
+    })
+    await loadData(user)
+  }
+
+  const updateGoalProgress = async (goal,value) => {
+    await api.updateGoal(user.token,goal.id,{
+      current_amount:value,
+      status:value>=Number(goal.targetAmount||0)?'completed':'active',
+    })
+    await loadData(user)
+  }
+
+  const deleteGoal = async goal => {
+    await api.deleteGoal(user.token,goal.id)
+    await loadData(user)
+  }
+
   const rotateJoinCode = () => api.rotateJoinCode(user.token)
 
   let content
@@ -1590,12 +1660,12 @@ function App(){
     if(page==='receitas') content=<Receitas incomes={incomes} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
     if(page==='despesas') content=<Despesas expenses={expenses} onNew={type=>setModal({kind:'transaction',type})} onReceipt={()=>setModal({kind:'receipt'})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
     if(page==='cartoes') content=<Cartoes cards={cards} expenses={expenses} onNew={()=>setModal({kind:'card'})} onPurchase={()=>setModal({kind:'cardPurchase'})} onPayInvoice={payCardInvoice}/>
-    if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes}/>
+    if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes} categories={categories} budgets={budgets} goals={goals} onBudget={budget=>setModal({kind:'budget',budget:budget?.id?budget:null})} onGoal={()=>setModal({kind:'goal'})} onGoalProgress={goal=>setModal({kind:'goalProgress',goal})} onGoalDelete={deleteGoal}/>
     if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
     if(page==='config') content=<Config user={user} users={users} onLogout={logout} onRotateJoinCode={rotateJoinCode}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={cards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={cards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={cards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
