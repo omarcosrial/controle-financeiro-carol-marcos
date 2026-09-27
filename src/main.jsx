@@ -491,7 +491,7 @@ function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice,onDeletePurchase}
         const cardColor=card.color || CARD_COLOR_OPTIONS[i%CARD_COLOR_OPTIONS.length].value
         const textColor=cardTextColor(cardColor)
         return <div className="credit-card" key={card.id} style={{'--card-color':cardColor,color:textColor}}>
-          <div className="cc-top"><small>Carol & Marcos</small><CardBrandMark brand={card.brand}/></div>
+          <div className="cc-top"><small>{card.holderName ? `Titular • ${card.holderName}` : 'Titular não definido'}</small><CardBrandMark brand={card.brand}/></div>
           <h3>{card.name}</h3>
           <div className="cc-number">•••• {card.last4 || '0000'}</div>
           <div className="cc-cycle">Fecha dia <b>{card.closingDay || '—'}</b> • Vence dia <b>{card.dueDay || '—'}</b></div>
@@ -807,7 +807,7 @@ function Config({user,users,categories,cards,onLogout,onRotateJoinCode,onChangeP
         {cards.length===0 ? <div className="empty">Nenhum cartão cadastrado.</div> :
         <div className="settings-grid-list">{cards.map(card=><div className="settings-line" key={card.id}>
           <div className="mini-icon expense"><CreditCard size={18}/></div>
-          <div className="grow"><b>{card.name} {card.last4 ? '•••• ' + card.last4 : ''}</b><small>Limite {money(card.limit)} • fecha dia {card.closingDay || '—'} • vence dia {card.dueDay || '—'}</small></div>
+          <div className="grow"><b>{card.name} {card.last4 ? '•••• ' + card.last4 : ''}</b><small>{card.holderName ? `Titular: ${card.holderName} • ` : ''}Limite {money(card.limit)} • fecha dia {card.closingDay || '—'} • vence dia {card.dueDay || '—'}</small></div>
           <span className={card.isActive ? 'pill' : 'pill pill-off'}>{card.isActive ? 'Ativo' : 'Inativo'}</span>
           <button className="icon-square" onClick={()=>onEditCard(card)} title="Editar cartão"><Pencil size={16}/></button>
           <button className="secondary-btn compact" onClick={()=>onToggleCard(card)}>{card.isActive ? 'Desativar' : 'Ativar'}</button>
@@ -1451,9 +1451,10 @@ function NewTransactionModal({type,user,categories,cards,item,onClose,onSave}){
   </div></div>
 }
 
-function NewCardModal({user,card,onClose,onSave}){
+function NewCardModal({user,users,card,onClose,onSave}){
   const [form,setForm] = useState({
     name:card?.name || '',
+    holderUserId:card?.holderUserId || user.id,
     brand:card?.brand || 'mastercard',
     color:card?.color || '#175CD3',
     last4:card?.last4 || '',
@@ -1475,6 +1476,7 @@ function NewCardModal({user,card,onClose,onSave}){
       await onSave({
         id:card?.id || null,
         name: form.name.trim(),
+        holder_user_id: form.holderUserId || null,
         brand: form.brand,
         color: form.color,
         last4: form.last4.replace(/\D/g,'').slice(-4) || null,
@@ -1494,6 +1496,10 @@ function NewCardModal({user,card,onClose,onSave}){
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal">
     <div className="modal-head"><h2>{card?'Editar cartão':'Novo cartão'}</h2><button onClick={onClose}><X/></button></div>
     <label>Nome do cartão</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ex.: Nubank"/>
+    <label>Titular do cartão</label>
+    <select value={form.holderUserId} onChange={e=>setForm({...form,holderUserId:e.target.value})}>
+      {users.filter(item=>item.is_active!==false).map(item=><option key={item.id} value={item.id}>{item.name}</option>)}
+    </select>
     <div className="card-style-grid">
       <div><label>Logo / bandeira</label><select value={form.brand} onChange={e=>setForm({...form,brand:e.target.value})}>{CARD_BRANDS.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
       <div><label>Cor do cartão</label><div className="card-color-picker">
@@ -1502,7 +1508,7 @@ function NewCardModal({user,card,onClose,onSave}){
       </div></div>
     </div>
     <div className="card-mini-preview" style={{'--card-color':form.color,color:cardTextColor(form.color)}}>
-      <div className="cc-top"><small>Carol & Marcos</small><CardBrandMark brand={form.brand}/></div>
+      <div className="cc-top"><small>Titular • {users.find(item=>item.id===form.holderUserId)?.name || user.name}</small><CardBrandMark brand={form.brand}/></div>
       <b>{form.name || 'Seu cartão'}</b>
       <span>•••• {form.last4 || '0000'}</span>
     </div>
@@ -1579,7 +1585,7 @@ function NewCardPurchaseModal({user,cards,categories,onClose,onSave}){
 
       <label>Cartão</label>
       <select value={form.cardId} onChange={event=>setForm({...form,cardId:event.target.value})}>
-        {cards.map(card=><option key={card.id} value={card.id}>{card.name} • disponível {money(Math.max(card.limit-card.used,0))}</option>)}
+        {cards.map(card=><option key={card.id} value={card.id}>{card.name}{card.holderName ? ` • ${card.holderName}` : ''} • disponível {money(Math.max(card.limit-card.used,0))}</option>)}
       </select>
 
       <label>Descrição da compra</label>
@@ -1825,6 +1831,8 @@ function App(){
         brand:card.brand || 'outro',
         color:card.color || '#175CD3',
         isActive:card.is_active !== false,
+        holderUserId:card.holder_user_id || null,
+        holderName:card.holder_user_id ? (userMap[card.holder_user_id] || 'Titular') : '',
         last4:card.last4,
         limit:Number(card.credit_limit || 0),
         used:Number(usageByCard[card.id] || 0),
@@ -2196,7 +2204,7 @@ function App(){
     if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onToggleCard={toggleCardActive} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
