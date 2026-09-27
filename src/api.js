@@ -90,6 +90,34 @@ export const api = {
   listCategories: session =>
     request('categories?select=id,name,type,icon,color,is_active&is_active=eq.true&order=name.asc', { session }),
 
+  addCategory: (session, category) =>
+    request('categories', {
+      method: 'POST',
+      body: category,
+      session,
+      prefer: 'return=representation,missing=default',
+    }),
+
+  updateCategory: (session, id, patch) =>
+    request(`categories?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: patch,
+      session,
+      prefer: 'return=representation',
+    }),
+
+  deleteCategory: (session, id) =>
+    request(`categories?id=eq.${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      session,
+    }),
+
+  setUserActive: (session, userId, isActive) =>
+    rpc('cm_set_user_active', {
+      p_user_id: userId,
+      p_is_active: isActive,
+    }, session),
+
   listTransactions: session =>
     request('transactions?select=id,type,description,amount,category_id,card_id,kind,status,transaction_date,due_date,paid_date,payment_method,installment_group,installment_number,total_installments,is_recurring,merchant,notes,source,created_by,paid_by,created_at&order=transaction_date.desc,created_at.desc', { session }),
 
