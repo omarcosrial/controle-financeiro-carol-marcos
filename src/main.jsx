@@ -435,7 +435,7 @@ function CardBrandMark({brand='outro'}){
   if(key==='amex') return <div className="card-brand-logo brand-word amex-mark">AMEX</div>
   return <div className="card-brand-logo generic-mark"><CreditCard size={22}/></div>
 }
-function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice}){
+function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice,onDeletePurchase}){
   const invoices=buildCardInvoices(cards,expenses)
   const totalLimit=cards.reduce((sum,card)=>sum+Number(card.limit||0),0)
   const used=cards.reduce((sum,card)=>sum+Number(card.used||0),0)
@@ -454,6 +454,28 @@ function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice}){
     },{})
   )
   const cardName=id=>cards.find(card=>card.id===id)?.name || 'Cartão'
+  const cardPurchases=Object.values(
+    expenses.filter(item=>item.cardId && item.source==='card' && item.statusKey!=='cancelled').reduce((acc,item)=>{
+      const key=item.installmentGroup || `single-${item.id}`
+      if(!acc[key]){
+        acc[key]={
+          id:key,
+          installmentGroup:item.installmentGroup || null,
+          description:item.installmentGroup ? item.desc.replace(/\s+\d+\/\d+$/,'') : item.desc,
+          cardId:item.cardId,
+          amount:0,
+          installments:Number(item.totalInstallments||1),
+          paid:0,
+          firstDue:item.dueDate || item.date,
+          itemId:item.installmentGroup ? null : item.id,
+        }
+      }
+      acc[key].amount+=Number(item.amount||0)
+      if(item.statusKey==='paid') acc[key].paid+=1
+      if(item.dueDate && (!acc[key].firstDue || item.dueDate<acc[key].firstDue)) acc[key].firstDue=item.dueDate
+      return acc
+    },{})
+  ).sort((a,b)=>(b.firstDue||'').localeCompare(a.firstDue||''))
 
   return <><PageHead title="Cartões" subtitle="Controle de cartões, compras e faturas." action={<div className="page-actions"><button className="secondary-btn compact" onClick={onPurchase} disabled={!cards.length}><CreditCard size={18}/> Nova compra</button><button className="primary-btn compact" onClick={onNew}><Plus size={18}/> Novo cartão</button></div>}/>
     <div className="stats-grid four">
@@ -476,6 +498,18 @@ function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice}){
           <div className="cc-bottom"><span>Disponível<br/><b>{money(Math.max(card.limit-card.used,0))}</b></span><span>Próxima fatura<br/><b>{money(invoice?.openAmount||0)}</b></span></div>
         </div>
       })}</div> : <div className="empty">Nenhum cartão cadastrado. Clique em “Novo cartão”.</div>}
+    </Card>
+
+    <Card title="Compras lançadas no cartão">
+      <div className="card-purchase-list">
+        {cardPurchases.length===0 ? <div className="empty">Nenhuma compra lançada no cartão.</div> : cardPurchases.map(purchase=><div className="card-purchase-row" key={purchase.id}>
+          <div className="mini-icon expense"><CreditCard size={18}/></div>
+          <div className="grow"><b>{purchase.description}</b><small>{cardName(purchase.cardId)} • {purchase.installments>1 ? `${purchase.installments} parcelas` : 'à vista'}{purchase.firstDue ? ` • 1º venc. ${new Date(purchase.firstDue+'T12:00:00').toLocaleDateString('pt-BR')}` : ''}</small></div>
+          <strong>{money(purchase.amount)}</strong>
+          <span className="status-badge status-pendente">{purchase.installments>1 ? `${purchase.paid}/${purchase.installments} pagas` : (purchase.paid?'Paga':'Aberta')}</span>
+          <button className="icon-square danger-action" onClick={()=>onDeletePurchase(purchase)} title="Apagar compra"><Trash2 size={17}/></button>
+        </div>)}
+      </div>
     </Card>
 
     <div className="two-col split-wide">
@@ -1981,6 +2015,17 @@ function App(){
     await loadData(user)
   }
 
+  const deleteCardPurchase = async purchase => {
+    const parcelText=purchase.installments>1 ? ` Todas as ${purchase.installments} parcelas serão apagadas, inclusive as já pagas.` : ''
+    if(!window.confirm(`Apagar a compra “${purchase.description}” no valor de ${money(purchase.amount)}?${parcelText} Esta ação não pode ser desfeita.`)) return
+    if(purchase.installmentGroup){
+      await api.removeCardPurchaseGroup(user.token,purchase.installmentGroup)
+    }else if(purchase.itemId){
+      await api.deleteTransaction(user.token,purchase.itemId)
+    }
+    await loadData(user)
+  }
+
   const saveReceipt = async receipt => {
     const receiptRows = await api.addReceiptImport(user.token, {
       household_id:user.householdId,
@@ -2145,7 +2190,7 @@ function App(){
     if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes}/>
     if(page==='receitas') content=<Receitas incomes={incomes} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
     if(page==='despesas') content=<Despesas expenses={expenses} onNew={type=>setModal({kind:'transaction',type})} onReceipt={()=>setModal({kind:'receipt'})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
-    if(page==='cartoes') content=<Cartoes cards={activeCards} expenses={expenses} onNew={()=>setModal({kind:'card'})} onPurchase={()=>setModal({kind:'cardPurchase'})} onPayInvoice={payCardInvoice}/>
+    if(page==='cartoes') content=<Cartoes cards={activeCards} expenses={expenses} onNew={()=>setModal({kind:'card'})} onPurchase={()=>setModal({kind:'cardPurchase'})} onPayInvoice={payCardInvoice} onDeletePurchase={deleteCardPurchase}/>
     if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes} categories={categories} budgets={budgets} goals={goals} onBudget={budget=>setModal({kind:'budget',budget:budget?.id?budget:null})} onGoal={()=>setModal({kind:'goal'})} onGoalProgress={goal=>setModal({kind:'goalProgress',goal})} onGoalDelete={deleteGoal}/>
     if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
     if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onToggleCard={toggleCardActive} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
