@@ -1,0 +1,76 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - android-apk
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar Android 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Compilar aplicativo web
+        run: npm run build
+
+      - name: Criar projeto Android
+        run: |
+          rm -rf android
+          npx cap add android
+          npx cap sync android
+
+      - name: Gerar ícone e splash
+        run: |
+          npx @capacitor/assets generate --android \
+            --iconBackgroundColor '#0e5bf0' \
+            --iconBackgroundColorDark '#0e5bf0' \
+            --splashBackgroundColor '#0e5bf0' \
+            --splashBackgroundColorDark '#0e5bf0'
+
+      - name: Gerar APK de teste
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Preparar APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk controle-financeiro-carol-marcos.apk
+
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: controle-financeiro-carol-marcos-apk
+          path: controle-financeiro-carol-marcos.apk
+          if-no-files-found: error
+          retention-days: 30
