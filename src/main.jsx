@@ -539,7 +539,7 @@ function Cartoes({cards,expenses,onNew,onPurchase,onPayInvoice,onDeletePurchase}
   </>
 }
 
-function Planejamento({expenses,incomes,categories,budgets,goals,onBudget,onGoal,onGoalProgress,onGoalDelete}){
+function Planejamento({expenses,incomes,categories,budgets,goals,onBudget,onBudgetDelete,onGoal,onGoalProgress,onGoalDelete}){
   const today=new Date()
   const year=today.getFullYear()
   const month=today.getMonth()+1
@@ -591,7 +591,8 @@ function Planejamento({expenses,incomes,categories,budgets,goals,onBudget,onGoal
           <div><b>{row.name}</b><span>{money(row.spent)} de {money(row.plannedAmount)}</span></div>
           <div className="progress"><i style={{width:Math.min(100,row.pct)+'%',background:row.pct>100?'#ef4444':row.color}}/></div>
           <em>{row.pct}%</em>
-          <button className="budget-edit" onClick={()=>onBudget(row)}><Pencil size={15}/></button>
+          <button className="budget-edit" onClick={()=>onBudget(row)} title="Editar orçamento"><Pencil size={15}/></button>
+          <button className="budget-edit danger-action" onClick={()=>onBudgetDelete(row)} title="Apagar orçamento"><Trash2 size={15}/></button>
         </div>)}</div>}
       </Card>
 
@@ -2096,6 +2097,13 @@ function App(){
     await loadData(user)
   }
 
+  const deleteBudget = async budget => {
+    const category=categories.find(item=>item.id===budget.categoryId)?.name || budget.name || 'esta categoria'
+    if(!window.confirm(`Apagar o orçamento de “${category}” deste mês? Esta ação não apaga as despesas lançadas.`)) return
+    await api.deleteBudget(user.token,budget.id)
+    await loadData(user)
+  }
+
   const saveGoal = async data => {
     await api.addGoal(user.token,{
       household_id:user.householdId,
@@ -2199,7 +2207,7 @@ function App(){
     if(page==='receitas') content=<Receitas incomes={incomes} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
     if(page==='despesas') content=<Despesas expenses={expenses} onNew={type=>setModal({kind:'transaction',type})} onReceipt={()=>setModal({kind:'receipt'})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
     if(page==='cartoes') content=<Cartoes cards={activeCards} expenses={expenses} onNew={()=>setModal({kind:'card'})} onPurchase={()=>setModal({kind:'cardPurchase'})} onPayInvoice={payCardInvoice} onDeletePurchase={deleteCardPurchase}/>
-    if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes} categories={categories} budgets={budgets} goals={goals} onBudget={budget=>setModal({kind:'budget',budget:budget?.id?budget:null})} onGoal={()=>setModal({kind:'goal'})} onGoalProgress={goal=>setModal({kind:'goalProgress',goal})} onGoalDelete={deleteGoal}/>
+    if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes} categories={categories} budgets={budgets} goals={goals} onBudget={budget=>setModal({kind:'budget',budget:budget?.id?budget:null})} onBudgetDelete={deleteBudget} onGoal={()=>setModal({kind:'goal'})} onGoalProgress={goal=>setModal({kind:'goalProgress',goal})} onGoalDelete={deleteGoal}/>
     if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
     if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onToggleCard={toggleCardActive} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
   }
