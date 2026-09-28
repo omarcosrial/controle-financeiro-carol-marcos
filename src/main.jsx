@@ -177,7 +177,7 @@ function Stat({icon:Icon, label, value, tone='blue', sub}){
 
 function Sidebar({page,setPage,user,onLogout}){
   const items = [['dashboard','Início',Home],['receitas','Receitas',TrendingUp],['despesas','Despesas',TrendingDown],['cartoes','Cartões',CreditCard],['planejamento','Planejamento',Target],['relatorios','Relatórios',BarChart3],['config','Configurações',Settings]]
-  return <aside className="sidebar"><div className="sidebar-brand"><BarChart3/><div><b>Carol <span>&</span> Marcos</b><small>CONTROLE FINANCEIRO</small></div></div><nav>{items.map(([k,l,I])=><button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={20}/><span>{l}</span></button>)}</nav><div className="sidebar-foot"><div className="user-dot">{user.name[0]?.toUpperCase()}</div><div><b>{user.name}</b><small>Usuário</small></div><button onClick={onLogout}><LogOut size={18}/></button></div></aside>
+  return <aside className="sidebar"><div className="sidebar-brand"><BarChart3/><div><b>Carol <span>&</span> Marcos</b><small>CONTROLE FINANCEIRO</small></div></div><nav>{items.map(([k,l,I])=><button key={k} title={l} aria-label={l} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={20}/><span>{l}</span></button>)}</nav><div className="sidebar-foot"><div className="user-dot">{user.name[0]?.toUpperCase()}</div><div className="sidebar-user-info"><b>{user.name}</b><small>Usuário</small></div><button title="Sair" aria-label="Sair" onClick={onLogout}><LogOut size={18}/></button></div></aside>
 }
 
 function Topbar({user}){
