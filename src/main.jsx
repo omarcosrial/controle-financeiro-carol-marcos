@@ -849,7 +849,7 @@ function transactionOrigin(item){
   return {label:'Despesas',page:'despesas'}
 }
 
-function TransactionViewModal({item,cards,onClose,onGoTo}){
+function TransactionViewModal({item,cards,onClose,onGoTo,onDelete}){
   const origin=transactionOrigin(item)
   const card=cards.find(card=>card.id===item.cardId)
   const formatDate=value=>value ? new Date(value+'T12:00:00').toLocaleDateString('pt-BR') : '—'
@@ -878,7 +878,10 @@ function TransactionViewModal({item,cards,onClose,onGoTo}){
         {item.merchant && <div><span>Estabelecimento</span><b>{item.merchant}</b></div>}
       </div>
       {item.notes && <div className="view-notes"><span>Observações</span><p>{item.notes}</p></div>}
-      <button className="primary-btn" onClick={onClose}>Fechar</button>
+      <div className="view-actions">
+        {typeLabel==='Despesa' && <button className="danger-btn" onClick={()=>onDelete(item)}><Trash2 size={18}/> Excluir lançamento</button>}
+        <button className="primary-btn" onClick={onClose}>Fechar</button>
+      </div>
     </div>
   </div>
 }
@@ -1995,6 +1998,22 @@ function App(){
     await loadData(user)
   }
 
+  const deleteViewedTransaction = async item => {
+    if(item.type==='income' || item.type==='in') return
+    if(item.source==='card' && item.installmentGroup){
+      const count=Number(item.totalInstallments||0)
+      const baseDesc=item.desc.replace(/\s+\d+\/\d+$/,'')
+      if(!window.confirm(`Excluir a compra parcelada “${baseDesc}”? ${count ? `Todas as ${count} parcelas serão apagadas.` : 'Todas as parcelas desta compra serão apagadas.'} Esta ação não pode ser desfeita.`)) return
+      await api.removeCardPurchaseGroup(user.token,item.installmentGroup)
+    }else{
+      const recurringNote=item.isRecurring ? ' Esta exclusão remove apenas esta ocorrência.' : ''
+      if(!window.confirm(`Excluir “${item.desc}”? Esta ação não pode ser desfeita.${recurringNote}`)) return
+      await api.deleteTransaction(user.token,item.id)
+    }
+    setModal(null)
+    await loadData(user)
+  }
+
   const toggleTransactionStatus = async item => {
     const isIncome = item.type==='income'
     const next = isIncome
@@ -2255,7 +2274,7 @@ function App(){
     if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onToggleCard={toggleCardActive} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='transactionView' && <TransactionViewModal item={modal.item} cards={activeCards} onClose={()=>setModal(null)} onGoTo={target=>{setPage(target);setModal(null)}}/>} {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='transactionView' && <TransactionViewModal item={modal.item} cards={activeCards} onClose={()=>setModal(null)} onGoTo={target=>{setPage(target);setModal(null)}} onDelete={deleteViewedTransaction}/>}  {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
