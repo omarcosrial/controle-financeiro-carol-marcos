@@ -297,7 +297,7 @@ function Dashboard({expenses,incomes,onView}){
     </div>
     <div className="two-col">
       <Card title="Últimas movimentações"><List rows={latest} onView={onView}/></Card>
-      <Card title="Próximas contas a vencer"><List rows={upcoming}/></Card>
+      <Card title="Próximas contas a vencer"><List rows={upcoming} onView={onView}/></Card>
     </div>
   </>
 }
