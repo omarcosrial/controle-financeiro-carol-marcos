@@ -423,3 +423,13 @@ button:disabled{opacity:.65;cursor:not-allowed}
   .view-title span{grid-column:1}
   .view-title strong{justify-self:start}
 }
+
+
+/* Exclusão no detalhe do lançamento */
+.view-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.danger-btn{border:1px solid #efc3c9;background:#fff;color:#d92d45;border-radius:12px;padding:13px 16px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.danger-btn:hover{background:#fff1f3}
+@media(max-width:760px){
+  .view-actions{display:grid;grid-template-columns:1fr}
+  .view-actions button{width:100%}
+}
