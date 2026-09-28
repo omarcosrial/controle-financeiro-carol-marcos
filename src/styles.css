@@ -128,7 +128,7 @@ button:disabled{opacity:.65;cursor:not-allowed}
 
 
 /* Planejamento */
-.planning-budget-list>div{grid-template-columns:1fr minmax(140px,1fr) 54px 34px}
+.planning-budget-list>div{grid-template-columns:1fr minmax(140px,1fr) 54px 34px 34px}
 .planning-budget-list .budget-over b,.planning-budget-list .budget-over em{color:#d9364b}
 .budget-edit{width:32px;height:32px;border:1px solid #dbe5f4;border-radius:9px;background:#fff;color:#1766e8;display:grid;place-items:center}
 .planning-summary{display:grid;gap:10px}
@@ -397,3 +397,5 @@ button:disabled{opacity:.65;cursor:not-allowed}
     margin-left:auto;
   }
 }
+
+.planning-budget-list .budget-edit.danger-action{color:#e33c4f}
