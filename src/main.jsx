@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import {
   Home, TrendingUp, TrendingDown, CreditCard, Target, BarChart3, Settings,
   Plus, Bell, LogOut, Wallet, PiggyBank, Clock3, ReceiptText, UserRound,
-  CalendarDays, ChevronRight, X, Save, Eye, EyeOff, CheckCircle2, Pencil, Trash2, Download
+  CalendarDays, ChevronLeft, ChevronRight, X, Save, Eye, EyeOff, CheckCircle2, Pencil, Trash2, Download
 } from 'lucide-react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell
@@ -181,10 +181,86 @@ function Sidebar({page,setPage,user,onLogout}){
   return <aside className="sidebar"><div className="sidebar-brand"><BarChart3/><div><b>Carol <span>&</span> Marcos</b><small>CONTROLE FINANCEIRO</small></div></div><nav>{items.map(([k,l,I])=><button key={k} title={l} aria-label={l} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={20}/><span>{l}</span></button>)}</nav><div className="sidebar-foot"><div className="user-dot">{user.name[0]?.toUpperCase()}</div><div className="sidebar-user-info"><b>{user.name}</b><small>Usuário</small></div><button title="Sair" aria-label="Sair" onClick={onLogout}><LogOut size={18}/></button></div></aside>
 }
 
-function Topbar({user}){
-  const raw=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(new Date())
-  const label=raw.charAt(0).toUpperCase()+raw.slice(1)
-  return <header className="topbar"><div className="top-date"><CalendarDays size={18}/> {label}</div><Bell size={20}/><div className="avatar">{user.name[0]?.toUpperCase()}</div><b>{user.name}</b></header>
+function buildNotifications(expenses,incomes){
+  const today=localISODate()
+  const soonDate=new Date()
+  soonDate.setDate(soonDate.getDate()+7)
+  const soon=localISODate(soonDate)
+  const result=[]
+
+  expenses.forEach(item=>{
+    if(item.statusKey!=='pending' || !item.dueDate) return
+    if(item.dueDate<today){
+      result.push({
+        id:`expense-overdue-${item.id}`,
+        item,
+        tone:'danger',
+        title:'Despesa em atraso',
+        detail:`Venceu em ${new Date(item.dueDate+'T12:00:00').toLocaleDateString('pt-BR')}`,
+        date:item.dueDate,
+      })
+    }else if(item.dueDate<=soon){
+      result.push({
+        id:`expense-soon-${item.id}`,
+        item,
+        tone:'warning',
+        title:'Conta a vencer',
+        detail:`Vence em ${new Date(item.dueDate+'T12:00:00').toLocaleDateString('pt-BR')}`,
+        date:item.dueDate,
+      })
+    }
+  })
+
+  incomes.forEach(item=>{
+    if(item.statusKey==='received' || item.statusKey==='cancelled') return
+    const raw=effectiveDate(item)
+    if(!raw || raw>soon) return
+    result.push({
+      id:`income-pending-${item.id}`,
+      item,
+      tone:raw<today?'warning':'info',
+      title:raw<today?'Receita pendente':'Receita a receber',
+      detail:raw<today
+        ? `Prevista para ${new Date(raw+'T12:00:00').toLocaleDateString('pt-BR')}`
+        : `Prevista para ${new Date(raw+'T12:00:00').toLocaleDateString('pt-BR')}`,
+      date:raw,
+    })
+  })
+
+  return result.sort((a,b)=>{
+    const priority={danger:0,warning:1,info:2}
+    return (priority[a.tone]-priority[b.tone]) || a.date.localeCompare(b.date)
+  })
+}
+
+function Topbar({user,notificationCount=0,onNotifications}){
+  const label='Hoje, '+new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date())
+  return <header className="topbar">
+    <div className="top-date" title="Data de hoje"><CalendarDays size={18}/> {label}</div>
+    <button type="button" className="notification-btn" onClick={onNotifications} aria-label={notificationCount?`Notificações: ${notificationCount}`:'Notificações'} title="Notificações">
+      <Bell size={20}/>
+      {notificationCount>0 && <span>{notificationCount>99?'99+':notificationCount}</span>}
+    </button>
+    <div className="avatar">{user.name[0]?.toUpperCase()}</div><b>{user.name}</b>
+  </header>
+}
+
+function NotificationsModal({items,onClose,onView}){
+  return <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="modal notifications-modal">
+      <div className="modal-head"><h2>Notificações</h2><button onClick={onClose} aria-label="Fechar"><X/></button></div>
+      <p className="notifications-intro">Contas que precisam da sua atenção agora ou nos próximos 7 dias.</p>
+      {items.length===0
+        ? <div className="notification-empty"><CheckCircle2 size={28}/><b>Tudo em dia</b><span>Nenhuma conta ou receita precisa de atenção agora.</span></div>
+        : <div className="notifications-list">{items.map(notification=><button type="button" className={`notification-item ${notification.tone}`} key={notification.id} onClick={()=>onView(notification.item)}>
+            <div className="notification-icon">{notification.item.type==='income'?<TrendingUp size={19}/>:notification.tone==='danger'?<TrendingDown size={19}/>:<Clock3 size={19}/>}</div>
+            <div className="grow"><b>{notification.title}</b><strong>{notification.item.desc}</strong><small>{notification.detail}</small></div>
+            <em>{money(notification.item.amount)}</em>
+            <ChevronRight size={18}/>
+          </button>)}</div>}
+      <button className="secondary-btn notifications-close" onClick={onClose}>Fechar</button>
+    </div>
+  </div>
 }
 function PageHead({title,subtitle,action}){ return <div className="page-head"><div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div> }
 function Card({title,children,action}){ return <section className="card"><div className="card-title"><h3>{title}</h3>{action}</div>{children}</section> }
@@ -303,19 +379,68 @@ function Dashboard({expenses,incomes,onView}){
 }
 
 function Receitas({incomes,onNew,onEdit,onDelete,onToggle}){
-  const rows=incomes.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
+  const [monthRef,setMonthRef]=useState(()=>{
+    const now=new Date()
+    return new Date(now.getFullYear(),now.getMonth(),1)
+  })
+  const selectedYear=monthRef.getFullYear()
+  const selectedMonth=monthRef.getMonth()
+  const monthLabelRaw=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(monthRef)
+  const monthLabel=monthLabelRaw.charAt(0).toUpperCase()+monthLabelRaw.slice(1)
+  const now=new Date()
+  const isThisMonth=selectedYear===now.getFullYear() && selectedMonth===now.getMonth()
+  const changeMonth=delta=>setMonthRef(prev=>new Date(prev.getFullYear(),prev.getMonth()+delta,1))
+  const goCurrentMonth=()=>setMonthRef(new Date(now.getFullYear(),now.getMonth(),1))
+
+  const rows=incomes.filter(item=>{
+    if(item.statusKey==='cancelled') return false
+    const raw=effectiveDate(item)
+    if(!raw) return false
+    const date=new Date(raw+'T12:00:00')
+    return date.getFullYear()===selectedYear && date.getMonth()===selectedMonth
+  })
   const total=rows.reduce((s,x)=>s+Number(x.amount||0),0)
   const received=rows.filter(x=>x.statusKey==='received').reduce((s,x)=>s+Number(x.amount||0),0)
   const pending=rows.filter(x=>x.statusKey!=='received').reduce((s,x)=>s+Number(x.amount||0),0)
   const extra=rows.filter(x=>x.kind==='Extra').reduce((s,x)=>s+Number(x.amount||0),0)
-  return <><PageHead title="Receitas" subtitle={`Controle de rendas e recebimentos de ${currentMonthLabel()}.`} action={<button className="primary-btn compact" onClick={()=>onNew('receita')}><Plus size={18}/> Nova receita</button>}/>
+  return <><PageHead title="Receitas" subtitle={`Controle de rendas e recebimentos de ${monthLabel}.`} action={<button className="primary-btn compact" onClick={()=>onNew('receita')}><Plus size={18}/> Nova receita</button>}/>
+    <div className="month-navigator">
+      <button type="button" className="month-nav-btn" onClick={()=>changeMonth(-1)} aria-label="Mês anterior" title="Mês anterior"><ChevronLeft size={20}/></button>
+      <div className="month-nav-label"><CalendarDays size={18}/><strong>{monthLabel}</strong></div>
+      <button type="button" className="month-nav-btn" onClick={()=>changeMonth(1)} aria-label="Próximo mês" title="Próximo mês"><ChevronRight size={20}/></button>
+      {!isThisMonth && <button type="button" className="month-today-btn" onClick={goCurrentMonth}>Hoje</button>}
+    </div>
     <div className="stats-grid four"><Stat icon={PiggyBank} label="Renda prevista" value={money(total)} tone="green"/><Stat icon={CheckCircle2} label="Renda recebida" value={money(received)} tone="green"/><Stat icon={Plus} label="Renda extra" value={money(extra)}/><Stat icon={Clock3} label="Pendente" value={money(pending)} tone="orange"/></div>
-    <div className="two-col split-wide"><Card title="Receitas recorrentes"><TransactionList rows={rows.filter(x=>x.kind==='Recorrente')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Receitas extras"><TransactionList rows={rows.filter(x=>x.kind==='Extra')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card></div>
+    <div className="two-col split-wide"><Card title={`Receitas recorrentes de ${monthLabel}`}><TransactionList rows={rows.filter(x=>x.kind==='Recorrente')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title={`Receitas extras de ${monthLabel}`}><TransactionList rows={rows.filter(x=>x.kind==='Extra')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card></div>
   </>
 }
 
 function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
-  const rows=expenses.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
+  const [monthRef,setMonthRef]=useState(()=>{
+    const now=new Date()
+    return new Date(now.getFullYear(),now.getMonth(),1)
+  })
+  const selectedYear=monthRef.getFullYear()
+  const selectedMonth=monthRef.getMonth()
+  const monthLabelRaw=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(monthRef)
+  const monthLabel=monthLabelRaw.charAt(0).toUpperCase()+monthLabelRaw.slice(1)
+  const now=new Date()
+  const isThisMonth=selectedYear===now.getFullYear() && selectedMonth===now.getMonth()
+  const changeMonth=delta=>setMonthRef(prev=>new Date(prev.getFullYear(),prev.getMonth()+delta,1))
+  const goCurrentMonth=()=>setMonthRef(new Date(now.getFullYear(),now.getMonth(),1))
+
+  const selectedMonthStart=localISODate(new Date(selectedYear,selectedMonth,1))
+  const today=localISODate()
+  const rows=expenses.filter(item=>{
+    if(item.statusKey==='cancelled') return false
+    const raw=effectiveDate(item)
+    if(!raw) return false
+    const date=new Date(raw+'T12:00:00')
+    const isSelectedMonth=date.getFullYear()===selectedYear && date.getMonth()===selectedMonth
+    const isCarriedOverdue=item.statusKey==='pending' && item.dueDate && item.dueDate<selectedMonthStart && item.dueDate<today
+    return isSelectedMonth || isCarriedOverdue
+  })
+  const carriedOverdueCount=rows.filter(item=>item.statusKey==='pending' && item.dueDate && item.dueDate<selectedMonthStart && item.dueDate<today).length
   const paid=rows.filter(x=>x.statusKey==='paid').reduce((s,x)=>s+Number(x.amount||0),0)
   const pendingRows=rows.filter(x=>x.statusKey!=='paid')
   const pending=pendingRows.filter(x=>getDisplayStatus(x)!=='Em atraso').reduce((s,x)=>s+Number(x.amount||0),0)
@@ -326,9 +451,15 @@ function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
     return a
   },{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value)
 
-  return <><PageHead title="Despesas" subtitle={`Controle e acompanhamento dos gastos de ${currentMonthLabel()}.`} action={<div className="page-actions"><button className="secondary-btn compact" onClick={onReceipt}><ReceiptText size={18}/> Ler cupom</button><button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button></div>}/>
+  return <><PageHead title="Despesas" subtitle={`Controle e acompanhamento dos gastos de ${monthLabel}.${carriedOverdueCount ? ` Inclui ${carriedOverdueCount} conta${carriedOverdueCount>1?'s':''} atrasada${carriedOverdueCount>1?'s':''} de meses anteriores.` : ''}`} action={<div className="page-actions"><button className="secondary-btn compact" onClick={onReceipt}><ReceiptText size={18}/> Ler cupom</button><button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button></div>}/>
+    <div className="month-navigator">
+      <button type="button" className="month-nav-btn" onClick={()=>changeMonth(-1)} aria-label="Mês anterior" title="Mês anterior"><ChevronLeft size={20}/></button>
+      <div className="month-nav-label"><CalendarDays size={18}/><strong>{monthLabel}</strong></div>
+      <button type="button" className="month-nav-btn" onClick={()=>changeMonth(1)} aria-label="Próximo mês" title="Próximo mês"><ChevronRight size={20}/></button>
+      {!isThisMonth && <button type="button" className="month-today-btn" onClick={goCurrentMonth}>Hoje</button>}
+    </div>
     <div className="stats-grid four"><Stat icon={CreditCard} label="Despesas pagas" value={money(paid)} tone="red"/><Stat icon={Clock3} label="A pagar" value={money(pending)} tone="orange"/><Stat icon={TrendingDown} label="Em atraso" value={money(overdue)} tone="red"/><Stat icon={Target} label="Total previsto" value={money(total)} tone="blue"/></div>
-    <div className="two-col split-wide"><Card title="Despesas do mês"><TransactionList rows={rows} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,8).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Sem despesas neste mês.</div>}</Card></div>
+    <div className="two-col split-wide"><Card title={`Despesas de ${monthLabel}`}><TransactionList rows={rows} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,8).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Sem despesas neste mês.</div>}</Card></div>
   </>
 }
 
@@ -1790,7 +1921,29 @@ function GoalProgressModal({goal,onClose,onSave}){
 }
 
 
-function BottomNav({page,setPage,onNew}){ return <nav className="bottom-nav"><button className={page==='dashboard'?'active':''} onClick={()=>setPage('dashboard')}><Home/><span>Início</span></button><button className={page==='receitas'?'active':''} onClick={()=>setPage('receitas')}><BarChart3/><span>Receitas</span></button><button className="fab" onClick={()=>onNew('despesa')}><Plus/></button><button className={page==='despesas'?'active':''} onClick={()=>setPage('despesas')}><TrendingDown/><span>Despesas</span></button><button className={['cartoes','planejamento','relatorios','config'].includes(page)?'active':''} onClick={()=>setPage('config')}><Settings/><span>Mais</span></button></nav> }
+function BottomNav({page,setPage,onNew,onMore}){ return <nav className="bottom-nav"><button className={page==='dashboard'?'active':''} onClick={()=>setPage('dashboard')}><Home/><span>Início</span></button><button className={page==='receitas'?'active':''} onClick={()=>setPage('receitas')}><BarChart3/><span>Receitas</span></button><button className="fab" onClick={()=>onNew('despesa')}><Plus/></button><button className={page==='despesas'?'active':''} onClick={()=>setPage('despesas')}><TrendingDown/><span>Despesas</span></button><button className={['cartoes','planejamento','relatorios','config'].includes(page)?'active':''} onClick={onMore}><Settings/><span>Mais</span></button></nav> }
+
+function MobileMoreModal({page,onClose,onSelect}){
+  const items=[
+    ['cartoes','Cartões','Faturas, limites e compras',CreditCard],
+    ['planejamento','Planejamento','Orçamentos e metas',Target],
+    ['relatorios','Relatórios','Análises e indicadores',BarChart3],
+    ['config','Configurações','Usuários, categorias e ajustes',Settings],
+  ]
+  return <div className="modal-backdrop mobile-more-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="mobile-more-sheet">
+      <div className="mobile-more-handle"/>
+      <div className="mobile-more-head"><div><b>Mais opções</b><span>Acesse todas as áreas do sistema</span></div><button onClick={onClose} aria-label="Fechar"><X/></button></div>
+      <div className="mobile-more-grid">
+        {items.map(([key,label,desc,Icon])=><button type="button" key={key} className={page===key?'active':''} onClick={()=>onSelect(key)}>
+          <span className="mobile-more-icon"><Icon size={22}/></span>
+          <span className="grow"><b>{label}</b><small>{desc}</small></span>
+          <ChevronRight size={19}/>
+        </button>)}
+      </div>
+    </div>
+  </div>
+}
 
 function App(){
   const [user,setUser]=useState(()=>getStore('cm_session',null))
@@ -2258,6 +2411,7 @@ function App(){
 
   const rotateJoinCode = () => api.rotateJoinCode(user.token)
   const activeCards=cards.filter(card=>card.isActive!==false)
+  const notifications=buildNotifications(expenses,incomes)
 
   let content
   if(loading) {
@@ -2274,7 +2428,7 @@ function App(){
     if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onToggleCard={toggleCardActive} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='transactionView' && <TransactionViewModal item={modal.item} cards={activeCards} onClose={()=>setModal(null)} onGoTo={target=>{setPage(target);setModal(null)}} onDelete={deleteViewedTransaction}/>}  {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user} notificationCount={notifications.length} onNotifications={()=>setModal({kind:'notifications'})}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})} onMore={()=>setModal({kind:'mobileMore'})}/>{modal?.kind==='mobileMore' && <MobileMoreModal page={page} onClose={()=>setModal(null)} onSelect={target=>{setPage(target);setModal(null)}}/>}{modal?.kind==='notifications' && <NotificationsModal items={notifications} onClose={()=>setModal(null)} onView={item=>setModal({kind:'transactionView',item})}/>} {modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='transactionView' && <TransactionViewModal item={modal.item} cards={activeCards} onClose={()=>setModal(null)} onGoTo={target=>{setPage(target);setModal(null)}} onDelete={deleteViewedTransaction}/>}  {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
