@@ -433,3 +433,22 @@ button:disabled{opacity:.65;cursor:not-allowed}
   .view-actions{display:grid;grid-template-columns:1fr}
   .view-actions button{width:100%}
 }
+
+
+/* Navegação mensal - Despesas */
+.month-navigator{display:flex;align-items:center;gap:8px;margin:-4px 0 16px}
+.month-nav-btn,.month-today-btn{border:1px solid #d5e0f0;background:#fff;color:#1766e8;border-radius:11px;min-height:42px;display:inline-flex;align-items:center;justify-content:center}
+.month-nav-btn{width:42px;padding:0}
+.month-nav-label{min-width:210px;min-height:42px;border:1px solid #d5e0f0;background:#f8fbff;border-radius:11px;padding:0 13px;display:flex;align-items:center;justify-content:center;gap:8px;color:#17346f}
+.month-nav-label strong{text-transform:capitalize}
+.month-today-btn{padding:0 14px;font-weight:800}
+@media(max-width:760px){
+  .month-navigator{background:#fff;border-radius:14px;padding:8px;gap:6px;margin:-2px 0 14px}
+  .month-nav-label{min-width:0;flex:1;padding:0 8px;font-size:14px}
+  .month-nav-btn{flex:0 0 42px}
+  .month-today-btn{padding:0 10px;font-size:12px}
+}
+@media(max-width:380px){
+  .month-nav-label svg{display:none}
+  .month-nav-label{font-size:13px}
+}
