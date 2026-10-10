@@ -1921,7 +1921,29 @@ function GoalProgressModal({goal,onClose,onSave}){
 }
 
 
-function BottomNav({page,setPage,onNew}){ return <nav className="bottom-nav"><button className={page==='dashboard'?'active':''} onClick={()=>setPage('dashboard')}><Home/><span>Início</span></button><button className={page==='receitas'?'active':''} onClick={()=>setPage('receitas')}><BarChart3/><span>Receitas</span></button><button className="fab" onClick={()=>onNew('despesa')}><Plus/></button><button className={page==='despesas'?'active':''} onClick={()=>setPage('despesas')}><TrendingDown/><span>Despesas</span></button><button className={['cartoes','planejamento','relatorios','config'].includes(page)?'active':''} onClick={()=>setPage('config')}><Settings/><span>Mais</span></button></nav> }
+function BottomNav({page,setPage,onNew,onMore}){ return <nav className="bottom-nav"><button className={page==='dashboard'?'active':''} onClick={()=>setPage('dashboard')}><Home/><span>Início</span></button><button className={page==='receitas'?'active':''} onClick={()=>setPage('receitas')}><BarChart3/><span>Receitas</span></button><button className="fab" onClick={()=>onNew('despesa')}><Plus/></button><button className={page==='despesas'?'active':''} onClick={()=>setPage('despesas')}><TrendingDown/><span>Despesas</span></button><button className={['cartoes','planejamento','relatorios','config'].includes(page)?'active':''} onClick={onMore}><Settings/><span>Mais</span></button></nav> }
+
+function MobileMoreModal({page,onClose,onSelect}){
+  const items=[
+    ['cartoes','Cartões','Faturas, limites e compras',CreditCard],
+    ['planejamento','Planejamento','Orçamentos e metas',Target],
+    ['relatorios','Relatórios','Análises e indicadores',BarChart3],
+    ['config','Configurações','Usuários, categorias e ajustes',Settings],
+  ]
+  return <div className="modal-backdrop mobile-more-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="mobile-more-sheet">
+      <div className="mobile-more-handle"/>
+      <div className="mobile-more-head"><div><b>Mais opções</b><span>Acesse todas as áreas do sistema</span></div><button onClick={onClose} aria-label="Fechar"><X/></button></div>
+      <div className="mobile-more-grid">
+        {items.map(([key,label,desc,Icon])=><button type="button" key={key} className={page===key?'active':''} onClick={()=>onSelect(key)}>
+          <span className="mobile-more-icon"><Icon size={22}/></span>
+          <span className="grow"><b>{label}</b><small>{desc}</small></span>
+          <ChevronRight size={19}/>
+        </button>)}
+      </div>
+    </div>
+  </div>
+}
 
 function App(){
   const [user,setUser]=useState(()=>getStore('cm_session',null))
@@ -2406,7 +2428,7 @@ function App(){
     if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onToggleCard={toggleCardActive} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user} notificationCount={notifications.length} onNotifications={()=>setModal({kind:'notifications'})}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='notifications' && <NotificationsModal items={notifications} onClose={()=>setModal(null)} onView={item=>setModal({kind:'transactionView',item})}/>} {modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='transactionView' && <TransactionViewModal item={modal.item} cards={activeCards} onClose={()=>setModal(null)} onGoTo={target=>{setPage(target);setModal(null)}} onDelete={deleteViewedTransaction}/>}  {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user} notificationCount={notifications.length} onNotifications={()=>setModal({kind:'notifications'})}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})} onMore={()=>setModal({kind:'mobileMore'})}/>{modal?.kind==='mobileMore' && <MobileMoreModal page={page} onClose={()=>setModal(null)} onSelect={target=>{setPage(target);setModal(null)}}/>}{modal?.kind==='notifications' && <NotificationsModal items={notifications} onClose={()=>setModal(null)} onView={item=>setModal({kind:'transactionView',item})}/>} {modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='transactionView' && <TransactionViewModal item={modal.item} cards={activeCards} onClose={()=>setModal(null)} onGoTo={target=>{setPage(target);setModal(null)}} onDelete={deleteViewedTransaction}/>}  {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
