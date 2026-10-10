@@ -328,13 +328,18 @@ function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
   const changeMonth=delta=>setMonthRef(prev=>new Date(prev.getFullYear(),prev.getMonth()+delta,1))
   const goCurrentMonth=()=>setMonthRef(new Date(now.getFullYear(),now.getMonth(),1))
 
+  const selectedMonthStart=localISODate(new Date(selectedYear,selectedMonth,1))
+  const today=localISODate()
   const rows=expenses.filter(item=>{
     if(item.statusKey==='cancelled') return false
     const raw=effectiveDate(item)
     if(!raw) return false
     const date=new Date(raw+'T12:00:00')
-    return date.getFullYear()===selectedYear && date.getMonth()===selectedMonth
+    const isSelectedMonth=date.getFullYear()===selectedYear && date.getMonth()===selectedMonth
+    const isCarriedOverdue=item.statusKey==='pending' && item.dueDate && item.dueDate<selectedMonthStart && item.dueDate<today
+    return isSelectedMonth || isCarriedOverdue
   })
+  const carriedOverdueCount=rows.filter(item=>item.statusKey==='pending' && item.dueDate && item.dueDate<selectedMonthStart && item.dueDate<today).length
   const paid=rows.filter(x=>x.statusKey==='paid').reduce((s,x)=>s+Number(x.amount||0),0)
   const pendingRows=rows.filter(x=>x.statusKey!=='paid')
   const pending=pendingRows.filter(x=>getDisplayStatus(x)!=='Em atraso').reduce((s,x)=>s+Number(x.amount||0),0)
@@ -345,7 +350,7 @@ function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
     return a
   },{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value)
 
-  return <><PageHead title="Despesas" subtitle={`Controle e acompanhamento dos gastos de ${monthLabel}.`} action={<div className="page-actions"><button className="secondary-btn compact" onClick={onReceipt}><ReceiptText size={18}/> Ler cupom</button><button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button></div>}/>
+  return <><PageHead title="Despesas" subtitle={`Controle e acompanhamento dos gastos de ${monthLabel}.${carriedOverdueCount ? ` Inclui ${carriedOverdueCount} conta${carriedOverdueCount>1?'s':''} atrasada${carriedOverdueCount>1?'s':''} de meses anteriores.` : ''}`} action={<div className="page-actions"><button className="secondary-btn compact" onClick={onReceipt}><ReceiptText size={18}/> Ler cupom</button><button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button></div>}/>
     <div className="month-navigator">
       <button type="button" className="month-nav-btn" onClick={()=>changeMonth(-1)} aria-label="Mês anterior" title="Mês anterior"><ChevronLeft size={20}/></button>
       <div className="month-nav-label"><CalendarDays size={18}/><strong>{monthLabel}</strong></div>
