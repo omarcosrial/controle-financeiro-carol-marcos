@@ -181,10 +181,86 @@ function Sidebar({page,setPage,user,onLogout}){
   return <aside className="sidebar"><div className="sidebar-brand"><BarChart3/><div><b>Carol <span>&</span> Marcos</b><small>CONTROLE FINANCEIRO</small></div></div><nav>{items.map(([k,l,I])=><button key={k} title={l} aria-label={l} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={20}/><span>{l}</span></button>)}</nav><div className="sidebar-foot"><div className="user-dot">{user.name[0]?.toUpperCase()}</div><div className="sidebar-user-info"><b>{user.name}</b><small>Usuário</small></div><button title="Sair" aria-label="Sair" onClick={onLogout}><LogOut size={18}/></button></div></aside>
 }
 
-function Topbar({user}){
-  const raw=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(new Date())
-  const label=raw.charAt(0).toUpperCase()+raw.slice(1)
-  return <header className="topbar"><div className="top-date"><CalendarDays size={18}/> {label}</div><Bell size={20}/><div className="avatar">{user.name[0]?.toUpperCase()}</div><b>{user.name}</b></header>
+function buildNotifications(expenses,incomes){
+  const today=localISODate()
+  const soonDate=new Date()
+  soonDate.setDate(soonDate.getDate()+7)
+  const soon=localISODate(soonDate)
+  const result=[]
+
+  expenses.forEach(item=>{
+    if(item.statusKey!=='pending' || !item.dueDate) return
+    if(item.dueDate<today){
+      result.push({
+        id:`expense-overdue-${item.id}`,
+        item,
+        tone:'danger',
+        title:'Despesa em atraso',
+        detail:`Venceu em ${new Date(item.dueDate+'T12:00:00').toLocaleDateString('pt-BR')}`,
+        date:item.dueDate,
+      })
+    }else if(item.dueDate<=soon){
+      result.push({
+        id:`expense-soon-${item.id}`,
+        item,
+        tone:'warning',
+        title:'Conta a vencer',
+        detail:`Vence em ${new Date(item.dueDate+'T12:00:00').toLocaleDateString('pt-BR')}`,
+        date:item.dueDate,
+      })
+    }
+  })
+
+  incomes.forEach(item=>{
+    if(item.statusKey==='received' || item.statusKey==='cancelled') return
+    const raw=effectiveDate(item)
+    if(!raw || raw>soon) return
+    result.push({
+      id:`income-pending-${item.id}`,
+      item,
+      tone:raw<today?'warning':'info',
+      title:raw<today?'Receita pendente':'Receita a receber',
+      detail:raw<today
+        ? `Prevista para ${new Date(raw+'T12:00:00').toLocaleDateString('pt-BR')}`
+        : `Prevista para ${new Date(raw+'T12:00:00').toLocaleDateString('pt-BR')}`,
+      date:raw,
+    })
+  })
+
+  return result.sort((a,b)=>{
+    const priority={danger:0,warning:1,info:2}
+    return (priority[a.tone]-priority[b.tone]) || a.date.localeCompare(b.date)
+  })
+}
+
+function Topbar({user,notificationCount=0,onNotifications}){
+  const label='Hoje, '+new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date())
+  return <header className="topbar">
+    <div className="top-date" title="Data de hoje"><CalendarDays size={18}/> {label}</div>
+    <button type="button" className="notification-btn" onClick={onNotifications} aria-label={notificationCount?`Notificações: ${notificationCount}`:'Notificações'} title="Notificações">
+      <Bell size={20}/>
+      {notificationCount>0 && <span>{notificationCount>99?'99+':notificationCount}</span>}
+    </button>
+    <div className="avatar">{user.name[0]?.toUpperCase()}</div><b>{user.name}</b>
+  </header>
+}
+
+function NotificationsModal({items,onClose,onView}){
+  return <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="modal notifications-modal">
+      <div className="modal-head"><h2>Notificações</h2><button onClick={onClose} aria-label="Fechar"><X/></button></div>
+      <p className="notifications-intro">Contas que precisam da sua atenção agora ou nos próximos 7 dias.</p>
+      {items.length===0
+        ? <div className="notification-empty"><CheckCircle2 size={28}/><b>Tudo em dia</b><span>Nenhuma conta ou receita precisa de atenção agora.</span></div>
+        : <div className="notifications-list">{items.map(notification=><button type="button" className={`notification-item ${notification.tone}`} key={notification.id} onClick={()=>onView(notification.item)}>
+            <div className="notification-icon">{notification.item.type==='income'?<TrendingUp size={19}/>:notification.tone==='danger'?<TrendingDown size={19}/>:<Clock3 size={19}/>}</div>
+            <div className="grow"><b>{notification.title}</b><strong>{notification.item.desc}</strong><small>{notification.detail}</small></div>
+            <em>{money(notification.item.amount)}</em>
+            <ChevronRight size={18}/>
+          </button>)}</div>}
+      <button className="secondary-btn notifications-close" onClick={onClose}>Fechar</button>
+    </div>
+  </div>
 }
 function PageHead({title,subtitle,action}){ return <div className="page-head"><div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div> }
 function Card({title,children,action}){ return <section className="card"><div className="card-title"><h3>{title}</h3>{action}</div>{children}</section> }
@@ -2313,6 +2389,7 @@ function App(){
 
   const rotateJoinCode = () => api.rotateJoinCode(user.token)
   const activeCards=cards.filter(card=>card.isActive!==false)
+  const notifications=buildNotifications(expenses,incomes)
 
   let content
   if(loading) {
@@ -2329,7 +2406,7 @@ function App(){
     if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onToggleCard={toggleCardActive} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='transactionView' && <TransactionViewModal item={modal.item} cards={activeCards} onClose={()=>setModal(null)} onGoTo={target=>{setPage(target);setModal(null)}} onDelete={deleteViewedTransaction}/>}  {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user} notificationCount={notifications.length} onNotifications={()=>setModal({kind:'notifications'})}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})}/>{modal?.kind==='notifications' && <NotificationsModal items={notifications} onClose={()=>setModal(null)} onView={item=>setModal({kind:'transactionView',item})}/>} {modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='transactionView' && <TransactionViewModal item={modal.item} cards={activeCards} onClose={()=>setModal(null)} onGoTo={target=>{setPage(target);setModal(null)}} onDelete={deleteViewedTransaction}/>}  {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
