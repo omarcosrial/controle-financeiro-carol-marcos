@@ -303,14 +303,39 @@ function Dashboard({expenses,incomes,onView}){
 }
 
 function Receitas({incomes,onNew,onEdit,onDelete,onToggle}){
-  const rows=incomes.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
+  const [monthRef,setMonthRef]=useState(()=>{
+    const now=new Date()
+    return new Date(now.getFullYear(),now.getMonth(),1)
+  })
+  const selectedYear=monthRef.getFullYear()
+  const selectedMonth=monthRef.getMonth()
+  const monthLabelRaw=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(monthRef)
+  const monthLabel=monthLabelRaw.charAt(0).toUpperCase()+monthLabelRaw.slice(1)
+  const now=new Date()
+  const isThisMonth=selectedYear===now.getFullYear() && selectedMonth===now.getMonth()
+  const changeMonth=delta=>setMonthRef(prev=>new Date(prev.getFullYear(),prev.getMonth()+delta,1))
+  const goCurrentMonth=()=>setMonthRef(new Date(now.getFullYear(),now.getMonth(),1))
+
+  const rows=incomes.filter(item=>{
+    if(item.statusKey==='cancelled') return false
+    const raw=effectiveDate(item)
+    if(!raw) return false
+    const date=new Date(raw+'T12:00:00')
+    return date.getFullYear()===selectedYear && date.getMonth()===selectedMonth
+  })
   const total=rows.reduce((s,x)=>s+Number(x.amount||0),0)
   const received=rows.filter(x=>x.statusKey==='received').reduce((s,x)=>s+Number(x.amount||0),0)
   const pending=rows.filter(x=>x.statusKey!=='received').reduce((s,x)=>s+Number(x.amount||0),0)
   const extra=rows.filter(x=>x.kind==='Extra').reduce((s,x)=>s+Number(x.amount||0),0)
-  return <><PageHead title="Receitas" subtitle={`Controle de rendas e recebimentos de ${currentMonthLabel()}.`} action={<button className="primary-btn compact" onClick={()=>onNew('receita')}><Plus size={18}/> Nova receita</button>}/>
+  return <><PageHead title="Receitas" subtitle={`Controle de rendas e recebimentos de ${monthLabel}.`} action={<button className="primary-btn compact" onClick={()=>onNew('receita')}><Plus size={18}/> Nova receita</button>}/>
+    <div className="month-navigator">
+      <button type="button" className="month-nav-btn" onClick={()=>changeMonth(-1)} aria-label="Mês anterior" title="Mês anterior"><ChevronLeft size={20}/></button>
+      <div className="month-nav-label"><CalendarDays size={18}/><strong>{monthLabel}</strong></div>
+      <button type="button" className="month-nav-btn" onClick={()=>changeMonth(1)} aria-label="Próximo mês" title="Próximo mês"><ChevronRight size={20}/></button>
+      {!isThisMonth && <button type="button" className="month-today-btn" onClick={goCurrentMonth}>Hoje</button>}
+    </div>
     <div className="stats-grid four"><Stat icon={PiggyBank} label="Renda prevista" value={money(total)} tone="green"/><Stat icon={CheckCircle2} label="Renda recebida" value={money(received)} tone="green"/><Stat icon={Plus} label="Renda extra" value={money(extra)}/><Stat icon={Clock3} label="Pendente" value={money(pending)} tone="orange"/></div>
-    <div className="two-col split-wide"><Card title="Receitas recorrentes"><TransactionList rows={rows.filter(x=>x.kind==='Recorrente')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Receitas extras"><TransactionList rows={rows.filter(x=>x.kind==='Extra')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card></div>
+    <div className="two-col split-wide"><Card title={`Receitas recorrentes de ${monthLabel}`}><TransactionList rows={rows.filter(x=>x.kind==='Recorrente')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title={`Receitas extras de ${monthLabel}`}><TransactionList rows={rows.filter(x=>x.kind==='Extra')} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card></div>
   </>
 }
 
