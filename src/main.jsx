@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import {
   Home, TrendingUp, TrendingDown, CreditCard, Target, BarChart3, Settings,
   Plus, Bell, LogOut, Wallet, PiggyBank, Clock3, ReceiptText, UserRound,
-  CalendarDays, ChevronRight, X, Save, Eye, EyeOff, CheckCircle2, Pencil, Trash2, Download
+  CalendarDays, ChevronLeft, ChevronRight, X, Save, Eye, EyeOff, CheckCircle2, Pencil, Trash2, Download
 } from 'lucide-react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell
@@ -315,7 +315,26 @@ function Receitas({incomes,onNew,onEdit,onDelete,onToggle}){
 }
 
 function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
-  const rows=expenses.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
+  const [monthRef,setMonthRef]=useState(()=>{
+    const now=new Date()
+    return new Date(now.getFullYear(),now.getMonth(),1)
+  })
+  const selectedYear=monthRef.getFullYear()
+  const selectedMonth=monthRef.getMonth()
+  const monthLabelRaw=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(monthRef)
+  const monthLabel=monthLabelRaw.charAt(0).toUpperCase()+monthLabelRaw.slice(1)
+  const now=new Date()
+  const isThisMonth=selectedYear===now.getFullYear() && selectedMonth===now.getMonth()
+  const changeMonth=delta=>setMonthRef(prev=>new Date(prev.getFullYear(),prev.getMonth()+delta,1))
+  const goCurrentMonth=()=>setMonthRef(new Date(now.getFullYear(),now.getMonth(),1))
+
+  const rows=expenses.filter(item=>{
+    if(item.statusKey==='cancelled') return false
+    const raw=effectiveDate(item)
+    if(!raw) return false
+    const date=new Date(raw+'T12:00:00')
+    return date.getFullYear()===selectedYear && date.getMonth()===selectedMonth
+  })
   const paid=rows.filter(x=>x.statusKey==='paid').reduce((s,x)=>s+Number(x.amount||0),0)
   const pendingRows=rows.filter(x=>x.statusKey!=='paid')
   const pending=pendingRows.filter(x=>getDisplayStatus(x)!=='Em atraso').reduce((s,x)=>s+Number(x.amount||0),0)
@@ -326,9 +345,15 @@ function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
     return a
   },{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value)
 
-  return <><PageHead title="Despesas" subtitle={`Controle e acompanhamento dos gastos de ${currentMonthLabel()}.`} action={<div className="page-actions"><button className="secondary-btn compact" onClick={onReceipt}><ReceiptText size={18}/> Ler cupom</button><button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button></div>}/>
+  return <><PageHead title="Despesas" subtitle={`Controle e acompanhamento dos gastos de ${monthLabel}.`} action={<div className="page-actions"><button className="secondary-btn compact" onClick={onReceipt}><ReceiptText size={18}/> Ler cupom</button><button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button></div>}/>
+    <div className="month-navigator">
+      <button type="button" className="month-nav-btn" onClick={()=>changeMonth(-1)} aria-label="Mês anterior" title="Mês anterior"><ChevronLeft size={20}/></button>
+      <div className="month-nav-label"><CalendarDays size={18}/><strong>{monthLabel}</strong></div>
+      <button type="button" className="month-nav-btn" onClick={()=>changeMonth(1)} aria-label="Próximo mês" title="Próximo mês"><ChevronRight size={20}/></button>
+      {!isThisMonth && <button type="button" className="month-today-btn" onClick={goCurrentMonth}>Hoje</button>}
+    </div>
     <div className="stats-grid four"><Stat icon={CreditCard} label="Despesas pagas" value={money(paid)} tone="red"/><Stat icon={Clock3} label="A pagar" value={money(pending)} tone="orange"/><Stat icon={TrendingDown} label="Em atraso" value={money(overdue)} tone="red"/><Stat icon={Target} label="Total previsto" value={money(total)} tone="blue"/></div>
-    <div className="two-col split-wide"><Card title="Despesas do mês"><TransactionList rows={rows} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,8).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Sem despesas neste mês.</div>}</Card></div>
+    <div className="two-col split-wide"><Card title={`Despesas de ${monthLabel}`}><TransactionList rows={rows} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,8).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Sem despesas neste mês.</div>}</Card></div>
   </>
 }
 
