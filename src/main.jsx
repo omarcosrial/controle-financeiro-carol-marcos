@@ -305,6 +305,31 @@ function expenseCategorySummary(categories=[],rows=[]){
   return summary.sort((a,b)=>b.value-a.value || a.name.localeCompare(b.name,'pt-BR'))
 }
 
+function expenseItemsForCategory(rows=[],category){
+  if(category?.id==='__uncategorized__'){
+    return rows.filter(item=>!item.categoryId || item.category==='Sem categoria')
+  }
+  return rows.filter(item=>item.categoryId===category?.id)
+}
+
+function CategoryItemsModal({category,rows=[],period,onClose,onView}){
+  const total=rows.reduce((sum,item)=>sum+Number(item.amount||0),0)
+  return <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
+    <div className="modal category-items-modal">
+      <div className="modal-head"><h2>{category?.name || 'Categoria'}</h2><button onClick={onClose} aria-label="Fechar"><X/></button></div>
+      <div className="category-items-summary">
+        <div><span>Período</span><b>{period}</b></div>
+        <div><span>Lançamentos</span><b>{rows.length}</b></div>
+        <div><span>Total</span><b>{money(total)}</b></div>
+      </div>
+      {rows.length
+        ? <TransactionList rows={rows} onView={onView}/>
+        : <div className="notification-empty"><ReceiptText size={28}/><b>Nenhum lançamento</b><span>Não há despesas nesta categoria no período selecionado.</span></div>}
+      <button className="secondary-btn category-items-close" onClick={onClose}>Fechar</button>
+    </div>
+  </div>
+}
+
 function currentMonthLabel(){
   const raw=new Intl.DateTimeFormat('pt-BR',{month:'long'}).format(new Date())
   return raw.charAt(0).toUpperCase()+raw.slice(1)
@@ -341,7 +366,7 @@ function TransactionList({rows=[],onEdit,onDelete,onToggle,onView}){
 
 function List({rows=[],onView}){ return <TransactionList rows={rows} onView={onView}/> }
 
-function Dashboard({expenses,incomes,categories,onView}){
+function Dashboard({expenses,incomes,categories,onView,onCategory}){
   const monthExpenses=expenses.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
   const monthIncomes=incomes.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
   const income=monthIncomes.reduce((s,x)=>s+Number(x.amount||0),0)
@@ -395,7 +420,7 @@ function Dashboard({expenses,incomes,categories,onView}){
     </div>
     <div className="two-col">
       <Card title="Receitas x Despesas"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly}><XAxis dataKey="m"/><YAxis/><Tooltip formatter={v=>money(v)}/><Bar name="Receitas" dataKey="r" fill="#14b87a" radius={[6,6,0,0]}/><Bar name="Despesas" dataKey="d" fill="#1368ff" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div></Card>
-      <Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical category-summary-wrap">{pieData.length ? <div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} dataKey="value" innerRadius={55} outerRadius={82} paddingAngle={1}>{pieData.map(x=><Cell key={x.id} fill={x.color}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div> : <div className="category-zero-state"><ReceiptText size={28}/><span>Sem gastos neste mês</span></div>}<div className="legend all-categories">{byCat.map(x=><div key={x.id}><span style={{background:x.color}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Nenhuma categoria de despesa cadastrada.</div>}</Card>
+      <Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical category-summary-wrap">{pieData.length ? <div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} dataKey="value" innerRadius={55} outerRadius={82} paddingAngle={1}>{pieData.map(x=><Cell key={x.id} fill={x.color}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div> : <div className="category-zero-state"><ReceiptText size={28}/><span>Sem gastos neste mês</span></div>}<div className="legend all-categories">{byCat.map(x=><div className="clickable-category" role="button" tabIndex={0} key={x.id} onClick={()=>onCategory({category:x,rows:expenseItemsForCategory(monthExpenses,x),period:currentMonthLabel()})} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onCategory({category:x,rows:expenseItemsForCategory(monthExpenses,x),period:currentMonthLabel()})}}}><span style={{background:x.color}}></span><b>{x.name}</b><em>{money(x.value)}</em><ChevronRight size={16}/></div>)}</div></div> : <div className="empty">Nenhuma categoria de despesa cadastrada.</div>}</Card>
     </div>
     <div className="two-col">
       <Card title="Últimas movimentações"><List rows={latest} onView={onView}/></Card>
@@ -441,7 +466,7 @@ function Receitas({incomes,onNew,onEdit,onDelete,onToggle}){
   </>
 }
 
-function Despesas({expenses,categories,onNew,onReceipt,onEdit,onDelete,onToggle}){
+function Despesas({expenses,categories,onNew,onReceipt,onEdit,onDelete,onToggle,onCategory}){
   const [monthRef,setMonthRef]=useState(()=>{
     const now=new Date()
     return new Date(now.getFullYear(),now.getMonth(),1)
@@ -483,7 +508,7 @@ function Despesas({expenses,categories,onNew,onReceipt,onEdit,onDelete,onToggle}
       {!isThisMonth && <button type="button" className="month-today-btn" onClick={goCurrentMonth}>Hoje</button>}
     </div>
     <div className="stats-grid four"><Stat icon={CreditCard} label="Despesas pagas" value={money(paid)} tone="red"/><Stat icon={Clock3} label="A pagar" value={money(pending)} tone="orange"/><Stat icon={TrendingDown} label="Em atraso" value={money(overdue)} tone="red"/><Stat icon={Target} label="Total previsto" value={money(total)} tone="blue"/></div>
-    <div className="two-col split-wide"><Card title={`Despesas de ${monthLabel}`}><TransactionList rows={rows} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical category-summary-wrap">{pieData.length ? <div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} dataKey="value" innerRadius={55} outerRadius={82}>{pieData.map(x=><Cell key={x.id} fill={x.color}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div> : <div className="category-zero-state"><ReceiptText size={28}/><span>Sem gastos neste mês</span></div>}<div className="legend all-categories">{byCat.map(x=><div key={x.id}><span style={{background:x.color}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Nenhuma categoria de despesa cadastrada.</div>}</Card></div>
+    <div className="two-col split-wide"><Card title={`Despesas de ${monthLabel}`}><TransactionList rows={rows} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical category-summary-wrap">{pieData.length ? <div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} dataKey="value" innerRadius={55} outerRadius={82}>{pieData.map(x=><Cell key={x.id} fill={x.color}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div> : <div className="category-zero-state"><ReceiptText size={28}/><span>Sem gastos neste mês</span></div>}<div className="legend all-categories">{byCat.map(x=><div className="clickable-category" role="button" tabIndex={0} key={x.id} onClick={()=>onCategory({category:x,rows:expenseItemsForCategory(rows,x),period:monthLabel})} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onCategory({category:x,rows:expenseItemsForCategory(rows,x),period:monthLabel})}}}><span style={{background:x.color}}></span><b>{x.name}</b><em>{money(x.value)}</em><ChevronRight size={16}/></div>)}</div></div> : <div className="empty">Nenhuma categoria de despesa cadastrada.</div>}</Card></div>
   </>
 }
 
@@ -2443,16 +2468,16 @@ function App(){
   } else if(loadError) {
     content=<div className="loading-card error-state"><b>Não foi possível sincronizar</b><p>{loadError}</p><button className="primary-btn compact" onClick={()=>loadData(user)}>Tentar novamente</button></div>
   } else {
-    if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes} categories={categories} onView={item=>setModal({kind:'transactionView',item})}/>
+    if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes} categories={categories} onView={item=>setModal({kind:'transactionView',item})} onCategory={data=>setModal({kind:'categoryItems',...data})}/>
     if(page==='receitas') content=<Receitas incomes={incomes} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
-    if(page==='despesas') content=<Despesas expenses={expenses} categories={categories} onNew={type=>setModal({kind:'transaction',type})} onReceipt={()=>setModal({kind:'receipt'})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
+    if(page==='despesas') content=<Despesas expenses={expenses} categories={categories} onNew={type=>setModal({kind:'transaction',type})} onReceipt={()=>setModal({kind:'receipt'})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus} onCategory={data=>setModal({kind:'categoryItems',...data})}/>
     if(page==='cartoes') content=<Cartoes cards={activeCards} expenses={expenses} onNew={()=>setModal({kind:'card'})} onPurchase={()=>setModal({kind:'cardPurchase'})} onPayInvoice={payCardInvoice} onDeletePurchase={deleteCardPurchase}/>
     if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes} categories={categories} budgets={budgets} goals={goals} onBudget={budget=>setModal({kind:'budget',budget:budget?.id?budget:null})} onBudgetDelete={deleteBudget} onGoal={()=>setModal({kind:'goal'})} onGoalProgress={goal=>setModal({kind:'goalProgress',goal})} onGoalDelete={deleteGoal}/>
     if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
     if(page==='config') content=<Config user={user} users={users} categories={categories} cards={cards} onLogout={logout} onRotateJoinCode={rotateJoinCode} onChangePin={()=>setModal({kind:'changePin'})} onNewCategory={()=>setModal({kind:'category'})} onEditCategory={category=>setModal({kind:'category',category})} onEditCard={card=>setModal({kind:'card',card})} onToggleCard={toggleCardActive} onToggleUser={toggleUserActive} onBackup={downloadBackup}/>
   }
 
-  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user} notificationCount={notifications.length} onNotifications={()=>setModal({kind:'notifications'})}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})} onMore={()=>setModal({kind:'mobileMore'})}/>{modal?.kind==='mobileMore' && <MobileMoreModal page={page} onClose={()=>setModal(null)} onSelect={target=>{setPage(target);setModal(null)}}/>}{modal?.kind==='notifications' && <NotificationsModal items={notifications} onClose={()=>setModal(null)} onView={item=>setModal({kind:'transactionView',item})}/>} {modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='transactionView' && <TransactionViewModal item={modal.item} cards={activeCards} onClose={()=>setModal(null)} onGoTo={target=>{setPage(target);setModal(null)}} onDelete={deleteViewedTransaction}/>}  {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
+  return <div className="app"><Sidebar page={page} setPage={setPage} user={user} onLogout={logout}/><main className="main"><Topbar user={user} notificationCount={notifications.length} onNotifications={()=>setModal({kind:'notifications'})}/><div className="content">{content}</div></main><BottomNav page={page} setPage={setPage} onNew={type=>setModal({kind:'transaction',type})} onMore={()=>setModal({kind:'mobileMore'})}/>{modal?.kind==='mobileMore' && <MobileMoreModal page={page} onClose={()=>setModal(null)} onSelect={target=>{setPage(target);setModal(null)}}/>}{modal?.kind==='notifications' && <NotificationsModal items={notifications} onClose={()=>setModal(null)} onView={item=>setModal({kind:'transactionView',item})}/>} {modal?.kind==='categoryItems' && <CategoryItemsModal category={modal.category} rows={modal.rows} period={modal.period} onClose={()=>setModal(null)} onView={item=>setModal({kind:'transactionView',item})}/>} {modal?.kind==='transaction' && <NewTransactionModal type={modal.type} item={modal.item} user={user} categories={categories} cards={activeCards} onClose={()=>setModal(null)} onSave={saveTransaction}/>} {modal?.kind==='transactionView' && <TransactionViewModal item={modal.item} cards={activeCards} onClose={()=>setModal(null)} onGoTo={target=>{setPage(target);setModal(null)}} onDelete={deleteViewedTransaction}/>}  {modal?.kind==='card' && <NewCardModal user={user} users={users} card={modal.card} onClose={()=>setModal(null)} onSave={saveCard}/>} {modal?.kind==='category' && <CategoryModal category={modal.category} onClose={()=>setModal(null)} onSave={saveCategory}/>} {modal?.kind==='changePin' && <ChangePinModal onClose={()=>setModal(null)} onSave={changePin}/>} {modal?.kind==='cardPurchase' && <NewCardPurchaseModal user={user} cards={activeCards} categories={categories} onClose={()=>setModal(null)} onSave={saveCardPurchase}/>} {modal?.kind==='receipt' && <ReceiptImportModal user={user} categories={categories} onClose={()=>setModal(null)} onImport={saveReceipt}/>} {modal?.kind==='budget' && <BudgetModal categories={categories} budget={modal.budget} onClose={()=>setModal(null)} onSave={saveBudget}/>} {modal?.kind==='goal' && <GoalModal user={user} onClose={()=>setModal(null)} onSave={saveGoal}/>} {modal?.kind==='goalProgress' && <GoalProgressModal goal={modal.goal} onClose={()=>setModal(null)} onSave={updateGoalProgress}/>}</div>
 }
 
 createRoot(document.getElementById('root')).render(<App/>)
