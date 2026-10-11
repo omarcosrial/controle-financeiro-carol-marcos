@@ -149,7 +149,7 @@ function Auth({ onLogin }){
         <p>{mode === 'login' ? 'Acesse sua conta para continuar cuidando das suas finanças.' : 'Cadastre seu nome e um PIN de quatro dígitos.'}</p>
 
         <label>Nome</label>
-        <div className="field"><UserRound size={20}/><input autoComplete="username" value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: Marcos"/></div>
+        <div className="field"><UserRound size={20}/><input autoComplete="username" value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: Seu nome"/></div>
 
         <label>PIN de 4 dígitos</label>
         <div className="field">
@@ -888,7 +888,7 @@ function Relatorios({expenses,incomes}){
 
     <div className="report-filters">
       <div><label>Período</label><select value={period} onChange={event=>setPeriod(event.target.value)}><option value="mes">Este mês</option><option value="6m">Últimos 6 meses</option><option value="ano">Este ano</option></select></div>
-      <div><label>Usuário</label><select value={person} onChange={event=>setPerson(event.target.value)}><option value="todos">Carol e Marcos</option>{people.map(name=><option key={name} value={name}>{name}</option>)}</select></div>
+      <div><label>Usuário</label><select value={person} onChange={event=>setPerson(event.target.value)}><option value="todos">Todos os usuários</option>{people.map(name=><option key={name} value={name}>{name}</option>)}</select></div>
     </div>
 
     <div className="stats-grid four">
@@ -967,7 +967,7 @@ function Config({user,users,categories,cards,onLogout,onRotateJoinCode,onChangeP
 
       <Card title="Perfil da família">
         <div className="settings-text">
-          <b>Carol & Marcos — Controle Financeiro</b>
+          <b>DuoFin — Finanças a Dois</b>
           <p>Dados compartilhados e sincronizados entre os usuários da família.</p>
           <p>Usuário atual: <strong>{user.name}</strong></p>
           {user.role==='admin' && <div className="family-code"><span>Código para cadastrar outro usuário</span><strong>{familyCode || 'Gere um novo código'}</strong><button className="secondary-btn" onClick={rotate} disabled={rotating}>{rotating?'Gerando...':'Gerar novo código'}</button></div>}
