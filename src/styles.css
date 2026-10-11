@@ -513,3 +513,12 @@ button:disabled{opacity:.65;cursor:not-allowed}
 @media(min-width:761px){
   .mobile-more-backdrop{display:none}
 }
+
+
+/* Lista completa de categorias */
+.category-summary-wrap{align-items:center}
+.category-summary-wrap .all-categories{width:100%;align-self:stretch}
+.category-zero-state{width:230px;height:230px;border:1px dashed #cfdaec;border-radius:50%;background:#f8fbff;color:#7183a8;display:grid;place-items:center;align-content:center;gap:8px;text-align:center;font-size:13px}
+@media(max-width:760px){
+  .category-zero-state{width:190px;height:190px}
+}
