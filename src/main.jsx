@@ -126,7 +126,7 @@ function Auth({ onLogin }){
     } catch (err) {
       const text = String(err?.message || err)
       if (mode === 'register' && text.toLowerCase().includes('código da família')) {
-        setMsg('Já existe uma família cadastrada. Para cadastrar Carol ou Marcos no mesmo sistema, informe o Código da Família.')
+        setMsg('Já existe uma família cadastrada. Para cadastrar outra pessoa no mesmo espaço financeiro, informe o Código da Família.')
       } else {
         setMsg(text)
       }
@@ -138,8 +138,8 @@ function Auth({ onLogin }){
   return <div className="auth-shell">
     <section className="auth-brand">
       <div className="brand-mark"><BarChart3 size={52}/></div>
-      <h1>Carol <span>&</span> Marcos</h1>
-      <p className="brand-sub">CONTROLE FINANCEIRO</p>
+      <h1>Duo<span>Fin</span></h1>
+      <p className="brand-sub">FINANÇAS A DOIS</p>
       <div className="brand-line"/>
       <p className="brand-tag">Planejamento hoje para grandes conquistas amanhã.</p>
     </section>
@@ -178,7 +178,7 @@ function Stat({icon:Icon, label, value, tone='blue', sub}){
 
 function Sidebar({page,setPage,user,onLogout}){
   const items = [['dashboard','Início',Home],['receitas','Receitas',TrendingUp],['despesas','Despesas',TrendingDown],['cartoes','Cartões',CreditCard],['planejamento','Planejamento',Target],['relatorios','Relatórios',BarChart3],['config','Configurações',Settings]]
-  return <aside className="sidebar"><div className="sidebar-brand"><BarChart3/><div><b>Carol <span>&</span> Marcos</b><small>CONTROLE FINANCEIRO</small></div></div><nav>{items.map(([k,l,I])=><button key={k} title={l} aria-label={l} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={20}/><span>{l}</span></button>)}</nav><div className="sidebar-foot"><div className="user-dot">{user.name[0]?.toUpperCase()}</div><div className="sidebar-user-info"><b>{user.name}</b><small>Usuário</small></div><button title="Sair" aria-label="Sair" onClick={onLogout}><LogOut size={18}/></button></div></aside>
+  return <aside className="sidebar"><div className="sidebar-brand"><BarChart3/><div><b>Duo<span>Fin</span></b><small>FINANÇAS A DOIS</small></div></div><nav>{items.map(([k,l,I])=><button key={k} title={l} aria-label={l} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={20}/><span>{l}</span></button>)}</nav><div className="sidebar-foot"><div className="user-dot">{user.name[0]?.toUpperCase()}</div><div className="sidebar-user-info"><b>{user.name}</b><small>Usuário</small></div><button title="Sair" aria-label="Sair" onClick={onLogout}><LogOut size={18}/></button></div></aside>
 }
 
 function buildNotifications(expenses,incomes){
@@ -2433,7 +2433,7 @@ function App(){
 
   const downloadBackup = () => {
     const backup={
-      app:'Carol & Marcos — Controle Financeiro',
+      app:'DuoFin — Finanças a Dois',
       exportedAt:new Date().toISOString(),
       exportedBy:user.name,
       version:1,
@@ -2451,7 +2451,7 @@ function App(){
     const url=URL.createObjectURL(blob)
     const link=document.createElement('a')
     link.href=url
-    link.download='backup-controle-financeiro-'+localISODate()+'.json'
+    link.download='backup-duofin-'+localISODate()+'.json'
     document.body.appendChild(link)
     link.click()
     link.remove()
