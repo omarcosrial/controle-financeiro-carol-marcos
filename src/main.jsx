@@ -277,6 +277,34 @@ function isCurrentMonth(item){
   return date.getFullYear()===now.getFullYear() && date.getMonth()===now.getMonth()
 }
 
+function expenseCategorySummary(categories=[],rows=[]){
+  const totals=rows.reduce((acc,item)=>{
+    const key=item.categoryId || '__uncategorized__'
+    acc[key]=(acc[key]||0)+Number(item.amount||0)
+    return acc
+  },{})
+  const expenseCategories=categories.filter(cat=>['expense','both'].includes(cat.type))
+  const knownIds=new Set(expenseCategories.map(cat=>cat.id))
+  const summary=expenseCategories.map((cat,index)=>({
+    id:cat.id,
+    name:cat.name,
+    value:Number(totals[cat.id]||0),
+    color:cat.color || COLORS[index%COLORS.length],
+  }))
+  const unknownValue=rows
+    .filter(item=>!item.categoryId || !knownIds.has(item.categoryId))
+    .reduce((sum,item)=>sum+Number(item.amount||0),0)
+  if(unknownValue>0){
+    summary.push({
+      id:'__uncategorized__',
+      name:'Sem categoria',
+      value:unknownValue,
+      color:COLORS[summary.length%COLORS.length],
+    })
+  }
+  return summary.sort((a,b)=>b.value-a.value || a.name.localeCompare(b.name,'pt-BR'))
+}
+
 function currentMonthLabel(){
   const raw=new Intl.DateTimeFormat('pt-BR',{month:'long'}).format(new Date())
   return raw.charAt(0).toUpperCase()+raw.slice(1)
@@ -313,7 +341,7 @@ function TransactionList({rows=[],onEdit,onDelete,onToggle,onView}){
 
 function List({rows=[],onView}){ return <TransactionList rows={rows} onView={onView}/> }
 
-function Dashboard({expenses,incomes,onView}){
+function Dashboard({expenses,incomes,categories,onView}){
   const monthExpenses=expenses.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
   const monthIncomes=incomes.filter(item=>isCurrentMonth(item) && item.statusKey!=='cancelled')
   const income=monthIncomes.reduce((s,x)=>s+Number(x.amount||0),0)
@@ -323,10 +351,8 @@ function Dashboard({expenses,incomes,onView}){
   const balance=received-spent
   const savingsRate=received>0 ? balance/received*100 : 0
 
-  const byCat=Object.entries(monthExpenses.reduce((a,x)=>{
-    a[x.category]=(a[x.category]||0)+Number(x.amount||0)
-    return a
-  },{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value)
+  const byCat=expenseCategorySummary(categories,monthExpenses)
+  const pieData=byCat.filter(item=>item.value>0)
 
   const now=new Date()
   const monthly=Array.from({length:6},(_,index)=>{
@@ -369,7 +395,7 @@ function Dashboard({expenses,incomes,onView}){
     </div>
     <div className="two-col">
       <Card title="Receitas x Despesas"><div className="chart-box"><ResponsiveContainer width="100%" height="100%"><BarChart data={monthly}><XAxis dataKey="m"/><YAxis/><Tooltip formatter={v=>money(v)}/><Bar name="Receitas" dataKey="r" fill="#14b87a" radius={[6,6,0,0]}/><Bar name="Despesas" dataKey="d" fill="#1368ff" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div></Card>
-      <Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82} paddingAngle={1}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,6).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Sem despesas neste mês.</div>}</Card>
+      <Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap category-summary-wrap">{pieData.length ? <div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} dataKey="value" innerRadius={55} outerRadius={82} paddingAngle={1}>{pieData.map(x=><Cell key={x.id} fill={x.color}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div> : <div className="category-zero-state"><ReceiptText size={28}/><span>Sem gastos neste mês</span></div>}<div className="legend all-categories">{byCat.map(x=><div key={x.id}><span style={{background:x.color}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Nenhuma categoria de despesa cadastrada.</div>}</Card>
     </div>
     <div className="two-col">
       <Card title="Últimas movimentações"><List rows={latest} onView={onView}/></Card>
@@ -415,7 +441,7 @@ function Receitas({incomes,onNew,onEdit,onDelete,onToggle}){
   </>
 }
 
-function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
+function Despesas({expenses,categories,onNew,onReceipt,onEdit,onDelete,onToggle}){
   const [monthRef,setMonthRef]=useState(()=>{
     const now=new Date()
     return new Date(now.getFullYear(),now.getMonth(),1)
@@ -446,10 +472,8 @@ function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
   const pending=pendingRows.filter(x=>getDisplayStatus(x)!=='Em atraso').reduce((s,x)=>s+Number(x.amount||0),0)
   const overdue=pendingRows.filter(x=>getDisplayStatus(x)==='Em atraso').reduce((s,x)=>s+Number(x.amount||0),0)
   const total=rows.reduce((s,x)=>s+Number(x.amount||0),0)
-  const byCat=Object.entries(rows.reduce((a,x)=>{
-    a[x.category]=(a[x.category]||0)+Number(x.amount||0)
-    return a
-  },{})).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value)
+  const byCat=expenseCategorySummary(categories,rows)
+  const pieData=byCat.filter(item=>item.value>0)
 
   return <><PageHead title="Despesas" subtitle={`Controle e acompanhamento dos gastos de ${monthLabel}.${carriedOverdueCount ? ` Inclui ${carriedOverdueCount} conta${carriedOverdueCount>1?'s':''} atrasada${carriedOverdueCount>1?'s':''} de meses anteriores.` : ''}`} action={<div className="page-actions"><button className="secondary-btn compact" onClick={onReceipt}><ReceiptText size={18}/> Ler cupom</button><button className="primary-btn compact" onClick={()=>onNew('despesa')}><Plus size={18}/> Nova despesa</button></div>}/>
     <div className="month-navigator">
@@ -459,7 +483,7 @@ function Despesas({expenses,onNew,onReceipt,onEdit,onDelete,onToggle}){
       {!isThisMonth && <button type="button" className="month-today-btn" onClick={goCurrentMonth}>Hoje</button>}
     </div>
     <div className="stats-grid four"><Stat icon={CreditCard} label="Despesas pagas" value={money(paid)} tone="red"/><Stat icon={Clock3} label="A pagar" value={money(pending)} tone="orange"/><Stat icon={TrendingDown} label="Em atraso" value={money(overdue)} tone="red"/><Stat icon={Target} label="Total previsto" value={money(total)} tone="blue"/></div>
-    <div className="two-col split-wide"><Card title={`Despesas de ${monthLabel}`}><TransactionList rows={rows} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical"><div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={byCat} dataKey="value" innerRadius={55} outerRadius={82}>{byCat.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div><div className="legend">{byCat.slice(0,8).map((x,i)=><div key={x.name}><span style={{background:COLORS[i%COLORS.length]}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Sem despesas neste mês.</div>}</Card></div>
+    <div className="two-col split-wide"><Card title={`Despesas de ${monthLabel}`}><TransactionList rows={rows} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle}/></Card><Card title="Despesas por categoria">{byCat.length ? <div className="pie-wrap vertical category-summary-wrap">{pieData.length ? <div className="pie"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} dataKey="value" innerRadius={55} outerRadius={82}>{pieData.map(x=><Cell key={x.id} fill={x.color}/>)}</Pie><Tooltip formatter={v=>money(v)}/></PieChart></ResponsiveContainer></div> : <div className="category-zero-state"><ReceiptText size={28}/><span>Sem gastos neste mês</span></div>}<div className="legend all-categories">{byCat.map(x=><div key={x.id}><span style={{background:x.color}}></span><b>{x.name}</b><em>{money(x.value)}</em></div>)}</div></div> : <div className="empty">Nenhuma categoria de despesa cadastrada.</div>}</Card></div>
   </>
 }
 
@@ -2419,9 +2443,9 @@ function App(){
   } else if(loadError) {
     content=<div className="loading-card error-state"><b>Não foi possível sincronizar</b><p>{loadError}</p><button className="primary-btn compact" onClick={()=>loadData(user)}>Tentar novamente</button></div>
   } else {
-    if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes} onView={item=>setModal({kind:'transactionView',item})}/>
+    if(page==='dashboard') content=<Dashboard expenses={expenses} incomes={incomes} categories={categories} onView={item=>setModal({kind:'transactionView',item})}/>
     if(page==='receitas') content=<Receitas incomes={incomes} onNew={type=>setModal({kind:'transaction',type})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
-    if(page==='despesas') content=<Despesas expenses={expenses} onNew={type=>setModal({kind:'transaction',type})} onReceipt={()=>setModal({kind:'receipt'})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
+    if(page==='despesas') content=<Despesas expenses={expenses} categories={categories} onNew={type=>setModal({kind:'transaction',type})} onReceipt={()=>setModal({kind:'receipt'})} onEdit={editTransaction} onDelete={deleteTransaction} onToggle={toggleTransactionStatus}/>
     if(page==='cartoes') content=<Cartoes cards={activeCards} expenses={expenses} onNew={()=>setModal({kind:'card'})} onPurchase={()=>setModal({kind:'cardPurchase'})} onPayInvoice={payCardInvoice} onDeletePurchase={deleteCardPurchase}/>
     if(page==='planejamento') content=<Planejamento expenses={expenses} incomes={incomes} categories={categories} budgets={budgets} goals={goals} onBudget={budget=>setModal({kind:'budget',budget:budget?.id?budget:null})} onBudgetDelete={deleteBudget} onGoal={()=>setModal({kind:'goal'})} onGoalProgress={goal=>setModal({kind:'goalProgress',goal})} onGoalDelete={deleteGoal}/>
     if(page==='relatorios') content=<Relatorios expenses={expenses} incomes={incomes}/>
