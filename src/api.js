@@ -59,15 +59,21 @@ async function readReceiptAI(session, imageBlob) {
 }
 
 export const api = {
-  register: (name, pin, joinCode) =>
+  register: (name, pin, {joinCode=null, householdName=null} = {}) =>
     rpc('cm_register_user', {
       p_name: name,
       p_pin: pin,
       p_join_code: joinCode || null,
+      p_household_name: householdName || null,
     }),
 
-  login: (name, pin) =>
-    rpc('cm_login', { p_name: name, p_pin: pin }),
+  login: (name, pin, {householdId=null, joinCode=null} = {}) =>
+    rpc('cm_login', {
+      p_name: name,
+      p_pin: pin,
+      p_household_id: householdId || null,
+      p_join_code: joinCode || null,
+    }),
 
   validate: session =>
     rpc('cm_validate_session', {}, session),
