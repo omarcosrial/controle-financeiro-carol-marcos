@@ -78,27 +78,43 @@ function txToUi(tx, categoryMap, userMap){
 
 function Auth({ onLogin }){
   const [mode, setMode] = useState('login')
+  const [registerKind,setRegisterKind] = useState('create')
+  const [familyName,setFamilyName] = useState('')
   const [name, setName] = useState('')
   const [pin, setPin] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [showPin, setShowPin] = useState(false)
+  const [showLoginFamilyCode,setShowLoginFamilyCode] = useState(false)
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const rememberedIdentity = getStore('duofin_last_identity',{})
 
   const submit = async e => {
     e.preventDefault()
     setMsg('')
     const clean = name.trim()
+    const code = joinCode.trim().toUpperCase()
     if (!clean) return setMsg('Digite seu nome.')
     if (!/^\d{4}$/.test(pin)) return setMsg('O PIN deve ter exatamente 4 números.')
+    if (mode==='register' && registerKind==='create' && !familyName.trim()) return setMsg('Digite um nome para sua família.')
+    if (mode==='register' && registerKind==='join' && !code) return setMsg('Informe o código da família.')
 
     setBusy(true)
     try {
       let result
       if (mode === 'register') {
-        result = await api.register(clean, pin, joinCode.trim() || null)
+        result = await api.register(clean, pin, {
+          joinCode: registerKind==='join' ? code : null,
+          householdName: registerKind==='create' ? familyName.trim() : null,
+        })
       } else {
-        result = await api.login(clean, pin)
+        const rememberedHouseholdId = rememberedIdentity?.name?.toLowerCase()===clean.toLowerCase()
+          ? rememberedIdentity.householdId
+          : null
+        result = await api.login(clean, pin, {
+          householdId: code ? null : rememberedHouseholdId || null,
+          joinCode: code || null,
+        })
       }
 
       const row = Array.isArray(result) ? result[0] : result
@@ -113,9 +129,11 @@ function Auth({ onLogin }){
         name: profile.user_name,
         role: profile.user_role,
         householdId: profile.household_id,
+        householdName: profile.household_name || row.household_name || 'Minha família',
         token: row.session_token,
       }
 
+      setStore('duofin_last_identity',{name:user.name,householdId:user.householdId})
       if (row.join_code) {
         setStore('cm_join_code', row.join_code)
         setStore('cm_show_join_code', true)
@@ -125,14 +143,20 @@ function Auth({ onLogin }){
       onLogin(user)
     } catch (err) {
       const text = String(err?.message || err)
-      if (mode === 'register' && text.toLowerCase().includes('código da família')) {
-        setMsg('Já existe uma família cadastrada. Para cadastrar outra pessoa no mesmo espaço financeiro, informe o Código da Família.')
-      } else {
-        setMsg(text)
+      if(mode==='login' && text.toLowerCase().includes('código da família')){
+        setShowLoginFamilyCode(true)
       }
+      setMsg(text)
     } finally {
       setBusy(false)
     }
+  }
+
+  const changeMode=next=>{
+    setMode(next)
+    setMsg('')
+    setJoinCode('')
+    setShowLoginFamilyCode(false)
   }
 
   return <div className="auth-shell">
@@ -145,10 +169,25 @@ function Auth({ onLogin }){
     </section>
     <section className="auth-panel">
       <form className="auth-card" onSubmit={submit}>
-        <h2>{mode === 'login' ? 'Faça seu login' : 'Criar usuário'}</h2>
-        <p>{mode === 'login' ? 'Acesse sua conta para continuar cuidando das suas finanças.' : 'Cadastre seu nome e um PIN de quatro dígitos.'}</p>
+        <h2>{mode === 'login' ? 'Faça seu login' : 'Primeiro acesso'}</h2>
+        <p>{mode === 'login' ? 'Acesse sua família para continuar cuidando das finanças.' : 'Crie uma nova família ou entre usando um código de convite.'}</p>
 
-        <label>Nome</label>
+        {mode==='register' && <div className="auth-choice">
+          <button type="button" className={registerKind==='create'?'active':''} onClick={()=>{setRegisterKind('create');setJoinCode('');setMsg('')}}><b>Criar nova família</b><span>Começar um espaço financeiro novo</span></button>
+          <button type="button" className={registerKind==='join'?'active':''} onClick={()=>{setRegisterKind('join');setFamilyName('');setMsg('')}}><b>Entrar em uma família</b><span>Usar o código recebido do parceiro</span></button>
+        </div>}
+
+        {mode==='register' && registerKind==='create' && <>
+          <label>Nome da família</label>
+          <div className="field"><Home size={20}/><input value={familyName} onChange={e=>setFamilyName(e.target.value)} maxLength={60} placeholder="Ex.: João & Ana"/></div>
+        </>}
+
+        {mode==='register' && registerKind==='join' && <>
+          <label>Código da família</label>
+          <div className="field"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase().replace(/\s/g,''))} maxLength={10} placeholder="Ex.: A1B2C3D4E5"/></div>
+        </>}
+
+        <label>Seu nome</label>
         <div className="field"><UserRound size={20}/><input autoComplete="username" value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: Seu nome"/></div>
 
         <label>PIN de 4 dígitos</label>
@@ -157,14 +196,19 @@ function Auth({ onLogin }){
           <button className="icon-btn" type="button" onClick={()=>setShowPin(v=>!v)}>{showPin?<EyeOff size={18}/>:<Eye size={18}/>}</button>
         </div>
 
-        {mode === 'register' && <>
-          <label>Código da Família <small className="label-help">(somente para o segundo usuário)</small></label>
-          <div className="field"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="Deixe vazio no primeiro cadastro"/></div>
+        {mode==='login' && <>
+          {!showLoginFamilyCode
+            ? <button className="link-btn auth-family-link" type="button" onClick={()=>setShowLoginFamilyCode(true)}>Entrar com código da família</button>
+            : <>
+              <label>Código da família <small className="label-help">(se necessário)</small></label>
+              <div className="field"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase().replace(/\s/g,''))} maxLength={10} placeholder="Código de convite"/></div>
+              <button className="link-btn auth-family-link" type="button" onClick={()=>{setShowLoginFamilyCode(false);setJoinCode('')}}>Ocultar código</button>
+            </>}
         </>}
 
         {msg && <div className="auth-msg">{msg}</div>}
-        <button className="primary-btn" type="submit" disabled={busy}>{busy ? 'Aguarde...' : (mode === 'login' ? 'Entrar' : 'Cadastrar e entrar')}</button>
-        <button className="link-btn" type="button" onClick={()=>{setMode(mode==='login'?'register':'login');setMsg('')}}>{mode === 'login' ? 'Primeiro acesso? Criar usuário' : 'Já tenho usuário'}</button>
+        <button className="primary-btn" type="submit" disabled={busy}>{busy ? 'Aguarde...' : (mode === 'login' ? 'Entrar' : registerKind==='create' ? 'Criar família e entrar' : 'Entrar na família')}</button>
+        <button className="link-btn" type="button" onClick={()=>changeMode(mode==='login'?'register':'login')}>{mode === 'login' ? 'Primeiro acesso? Criar ou entrar em uma família' : 'Já tenho cadastro'}</button>
 
         <div className="verse-card"><div>📖</div><p>“Os planos do diligente certamente levam à vantagem, mas todo apressado certamente chega à pobreza.”</p><strong>PROVÉRBIOS 21:5</strong></div>
       </form>
@@ -967,10 +1011,10 @@ function Config({user,users,categories,cards,onLogout,onRotateJoinCode,onChangeP
 
       <Card title="Perfil da família">
         <div className="settings-text">
-          <b>DuoFin — Finanças a Dois</b>
-          <p>Dados compartilhados e sincronizados entre os usuários da família.</p>
+          <b>{user.householdName || 'Minha família'}</b>
+          <p>Espaço financeiro no DuoFin, compartilhado somente com os usuários desta família.</p>
           <p>Usuário atual: <strong>{user.name}</strong></p>
-          {user.role==='admin' && <div className="family-code"><span>Código para cadastrar outro usuário</span><strong>{familyCode || 'Gere um novo código'}</strong><button className="secondary-btn" onClick={rotate} disabled={rotating}>{rotating?'Gerando...':'Gerar novo código'}</button></div>}
+          {user.role==='admin' && <div className="family-code"><span>Código de convite da família</span><strong>{familyCode || 'Gere um novo código'}</strong><button className="secondary-btn" onClick={rotate} disabled={rotating}>{rotating?'Gerando...':'Gerar novo código'}</button></div>}
         </div>
       </Card>
     </div>
@@ -2040,9 +2084,11 @@ function App(){
         name: profile.user_name,
         role: profile.user_role,
         householdId: profile.household_id,
+        householdName: profile.household_name || currentUser.householdName || 'Minha família',
       }
       setUser(freshUser)
       setStore('cm_session', freshUser)
+      setStore('duofin_last_identity',{name:freshUser.name,householdId:freshUser.householdId})
 
       const categoryMap = Object.fromEntries((categoryRows || []).map(cat=>[cat.id,cat]))
       const userMap = Object.fromEntries((userRows || []).map(item=>[item.id,item.name]))
@@ -2109,6 +2155,7 @@ function App(){
   const login = freshUser => {
     setUser(freshUser)
     setStore('cm_session', freshUser)
+    setStore('duofin_last_identity',{name:freshUser.name,householdId:freshUser.householdId})
     loadData(freshUser)
   }
 

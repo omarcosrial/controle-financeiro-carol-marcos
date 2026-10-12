@@ -1,4 +1,4 @@
--- Carol & Marcos - Controle Financeiro
+-- DuoFin - Finanças a Dois
 -- Schema inicial para Supabase
 -- Execute este arquivo no SQL Editor do Supabase uma única vez.
 
@@ -10,7 +10,7 @@ create extension if not exists pgcrypto with schema extensions;
 
 create table if not exists public.households (
   id uuid primary key default gen_random_uuid(),
-  name text not null default 'Carol & Marcos',
+  name text not null default 'Minha família',
   join_code_hash text not null,
   created_at timestamptz not null default now()
 );
@@ -19,14 +19,15 @@ create table if not exists public.app_users (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households(id) on delete cascade,
   name text not null,
-  name_key text not null unique,
+  name_key text not null,
   pin_hash text not null,
   role text not null default 'member' check (role in ('admin','member')),
   is_active boolean not null default true,
   failed_attempts integer not null default 0,
   locked_until timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique (household_id, name_key)
 );
 
 create table if not exists public.app_sessions (
@@ -150,12 +151,15 @@ grant select, insert, update, delete on public.categories to anon, authenticated
 create or replace function public.cm_register_user(
   p_name text,
   p_pin text,
-  p_join_code text default null
+  p_join_code text default null,
+  p_household_name text default null
 )
 returns table (
   user_id uuid,
   user_name text,
   user_role text,
+  household_id uuid,
+  household_name text,
   session_token text,
   join_code text
 )
@@ -167,36 +171,64 @@ declare
   v_name text := trim(p_name);
   v_name_key text := lower(trim(p_name));
   v_household_id uuid;
-  v_join_hash text;
+  v_household_name text;
   v_join_code text;
   v_user_id uuid;
   v_role text;
   v_session_token text;
 begin
   if v_name = '' then
-    raise exception 'Digite um nome.';
+    raise exception 'Digite seu nome.';
   end if;
 
   if p_pin !~ '^[0-9]{4}$' then
     raise exception 'O PIN deve ter exatamente 4 números.';
   end if;
 
-  if exists (select 1 from public.app_users where name_key = v_name_key) then
-    raise exception 'Este nome já está cadastrado.';
-  end if;
+  if nullif(trim(coalesce(p_join_code,'')), '') is not null then
+    select h.id, h.name
+      into v_household_id, v_household_name
+    from public.households h
+    where h.join_code_hash = encode(
+      extensions.digest(upper(trim(p_join_code)), 'sha256'),
+      'hex'
+    )
+    limit 1;
 
-  select h.id, h.join_code_hash
-    into v_household_id, v_join_hash
-  from public.households h
-  order by h.created_at
-  limit 1;
+    if v_household_id is null then
+      raise exception 'Código da família inválido.';
+    end if;
 
-  if v_household_id is null then
-    v_join_code := upper(substr(encode(extensions.gen_random_bytes(8), 'hex'), 1, 8));
+    if exists (
+      select 1 from public.app_users u
+      where u.household_id = v_household_id
+        and u.name_key = v_name_key
+    ) then
+      raise exception 'Já existe uma pessoa com este nome nesta família.';
+    end if;
+
+    v_role := 'member';
+    v_join_code := null;
+  else
+    v_household_name := coalesce(
+      nullif(trim(p_household_name), ''),
+      'Família de ' || v_name
+    );
+
+    loop
+      v_join_code := upper(substr(encode(extensions.gen_random_bytes(8), 'hex'), 1, 10));
+      exit when not exists (
+        select 1 from public.households h
+        where h.join_code_hash = encode(
+          extensions.digest(v_join_code, 'sha256'),
+          'hex'
+        )
+      );
+    end loop;
 
     insert into public.households (name, join_code_hash)
     values (
-      'Carol & Marcos',
+      v_household_name,
       encode(extensions.digest(v_join_code, 'sha256'), 'hex')
     )
     returning id into v_household_id;
@@ -223,13 +255,6 @@ begin
       (v_household_id, 'Reembolso', 'income', 'rotate-ccw', '#8b5cf6'),
       (v_household_id, 'Outras receitas', 'income', 'circle-plus', '#64748b')
     on conflict do nothing;
-  else
-    if p_join_code is null
-       or encode(extensions.digest(upper(trim(p_join_code)), 'sha256'), 'hex') <> v_join_hash then
-      raise exception 'Código da família inválido.';
-    end if;
-    v_role := 'member';
-    v_join_code := null;
   end if;
 
   insert into public.app_users (
@@ -254,19 +279,29 @@ begin
   );
 
   return query
-  select v_user_id, v_name, v_role, v_session_token, v_join_code;
+  select
+    v_user_id,
+    v_name,
+    v_role,
+    v_household_id,
+    v_household_name,
+    v_session_token,
+    v_join_code;
 end;
 $$;
 
 create or replace function public.cm_login(
   p_name text,
-  p_pin text
+  p_pin text,
+  p_household_id uuid default null,
+  p_join_code text default null
 )
 returns table (
   user_id uuid,
   user_name text,
   user_role text,
   household_id uuid,
+  household_name text,
   session_token text
 )
 language plpgsql
@@ -275,14 +310,60 @@ set search_path = public, extensions
 as $$
 declare
   v_user public.app_users%rowtype;
+  v_household_id uuid := p_household_id;
+  v_household_name text;
+  v_matches integer := 0;
   v_session_token text;
 begin
-  select *
-    into v_user
-  from public.app_users
-  where name_key = lower(trim(p_name))
-    and is_active = true
-  limit 1;
+  if trim(coalesce(p_name,'')) = '' then
+    raise exception 'Digite seu nome.';
+  end if;
+
+  if p_pin !~ '^[0-9]{4}$' then
+    raise exception 'O PIN deve ter exatamente 4 números.';
+  end if;
+
+  if nullif(trim(coalesce(p_join_code,'')), '') is not null then
+    select h.id
+      into v_household_id
+    from public.households h
+    where h.join_code_hash = encode(
+      extensions.digest(upper(trim(p_join_code)), 'sha256'),
+      'hex'
+    )
+    limit 1;
+
+    if v_household_id is null then
+      raise exception 'Código da família inválido.';
+    end if;
+  end if;
+
+  if v_household_id is not null then
+    select *
+      into v_user
+    from public.app_users u
+    where u.household_id = v_household_id
+      and u.name_key = lower(trim(p_name))
+      and u.is_active = true
+    limit 1;
+  else
+    select count(*)
+      into v_matches
+    from public.app_users u
+    where u.name_key = lower(trim(p_name))
+      and u.is_active = true;
+
+    if v_matches > 1 then
+      raise exception 'Há mais de uma pessoa com este nome. Informe o código da família.';
+    end if;
+
+    select *
+      into v_user
+    from public.app_users u
+    where u.name_key = lower(trim(p_name))
+      and u.is_active = true
+    limit 1;
+  end if;
 
   if v_user.id is null then
     raise exception 'Nome ou PIN incorretos.';
@@ -314,6 +395,11 @@ begin
   where s.user_id = v_user.id
     and s.expires_at <= now();
 
+  select h.name
+    into v_household_name
+  from public.households h
+  where h.id = v_user.household_id;
+
   v_session_token := encode(extensions.gen_random_bytes(32), 'hex');
 
   insert into public.app_sessions (user_id, token_hash, expires_at)
@@ -324,7 +410,13 @@ begin
   );
 
   return query
-  select v_user.id, v_user.name, v_user.role, v_user.household_id, v_session_token;
+  select
+    v_user.id,
+    v_user.name,
+    v_user.role,
+    v_user.household_id,
+    v_household_name,
+    v_session_token;
 end;
 $$;
 
@@ -333,15 +425,17 @@ returns table (
   user_id uuid,
   user_name text,
   user_role text,
-  household_id uuid
+  household_id uuid,
+  household_name text
 )
 language sql
 stable
 security definer
 set search_path = public, extensions
 as $$
-  select u.id, u.name, u.role, u.household_id
+  select u.id, u.name, u.role, u.household_id, h.name
   from public.app_users u
+  join public.households h on h.id = u.household_id
   where u.id = public.cm_current_user_id()
     and u.is_active = true
   limit 1;
@@ -441,7 +535,7 @@ begin
     raise exception 'Apenas o administrador pode gerar um novo código da família.';
   end if;
 
-  v_code := upper(substr(encode(extensions.gen_random_bytes(8), 'hex'), 1, 8));
+  v_code := upper(substr(encode(extensions.gen_random_bytes(8), 'hex'), 1, 10));
 
   update public.households
   set join_code_hash = encode(extensions.digest(v_code, 'sha256'), 'hex')
@@ -451,8 +545,8 @@ begin
 end;
 $$;
 
-grant execute on function public.cm_register_user(text, text, text) to anon, authenticated;
-grant execute on function public.cm_login(text, text) to anon, authenticated;
+grant execute on function public.cm_register_user(text, text, text, text) to anon, authenticated;
+grant execute on function public.cm_login(text, text, uuid, text) to anon, authenticated;
 grant execute on function public.cm_validate_session() to anon, authenticated;
 grant execute on function public.cm_logout() to anon, authenticated;
 grant execute on function public.cm_change_pin(text, text) to anon, authenticated;
